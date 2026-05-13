@@ -64,6 +64,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             className="object-cover object-center md:object-top"
             sizes="100vw"
             quality={90}
+            unoptimized
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black via-black/70 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
@@ -181,6 +182,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
                   fill
                   className="object-cover"
                   sizes="320px"
+                  unoptimized
                 />
                 {/* Title overlay - Only shown when active (focus) */}
                 {i === activeIndex && (

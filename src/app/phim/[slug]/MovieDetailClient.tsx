@@ -94,6 +94,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
           fill
           className="object-cover object-top"
           priority
+          unoptimized
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-black via-black/40 to-transparent" />
@@ -115,6 +116,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                 height={450}
                 className="w-full h-auto object-cover"
                 priority
+                unoptimized
               />
             </div>
           </motion.div>
@@ -302,7 +304,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                     <div key={i} className="flex flex-col items-center text-center min-w-[100px] group">
                       <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden mb-3 border-2 border-zinc-800 group-hover:border-red-500 transition-colors shadow-xl bg-zinc-900">
                         {person.image ? (
-                          <Image src={person.image} alt={person.name} fill className="object-cover" />
+                          <Image src={person.image} alt={person.name} fill className="object-cover" unoptimized />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-zinc-600 bg-zinc-800">
                             {person.name.charAt(0)}
@@ -332,7 +334,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                 <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
                   {extra.images.map((img: any, i: number) => (
                     <div key={i} className="relative w-64 md:w-80 aspect-video rounded-xl overflow-hidden shrink-0 border border-zinc-800 shadow-xl">
-                      <Image src={img.url} alt={`Gallery image ${i}`} fill className="object-cover hover:scale-110 transition-transform duration-500" />
+                      <Image src={img.url} alt={`Gallery image ${i}`} fill className="object-cover hover:scale-110 transition-transform duration-500" unoptimized />
                     </div>
                   ))}
                 </div>

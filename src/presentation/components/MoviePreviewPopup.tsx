@@ -117,6 +117,7 @@ export default function MoviePreviewPopup({ movie, rect, onClose, onMouseEnter, 
               alt={movie.name}
               fill
               className="object-cover"
+              unoptimized
             />
           )}
 

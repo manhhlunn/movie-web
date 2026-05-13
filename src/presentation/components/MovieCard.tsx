@@ -114,6 +114,7 @@ export default function MovieCard({ movie: listMovie, index = 0, className }: Mo
               className={cn(
                 'object-cover transition-all duration-500 group-hover:scale-110'
               )}
+              unoptimized
             />
 
             {/* Quality badge */}
