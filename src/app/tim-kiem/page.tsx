@@ -2,7 +2,6 @@ import { Suspense } from 'react';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import SearchResults from './SearchResults';
 
-export const unstable_instant = { prefetch: 'static' };
 
 export default function SearchPage() {
   return (
