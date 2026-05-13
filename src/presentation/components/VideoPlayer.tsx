@@ -193,6 +193,52 @@ function HLSPlayer({
     };
   }, []);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (
+        document.activeElement?.tagName === 'INPUT' || 
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) return;
+
+      const video = videoRef.current;
+      if (!video) return;
+
+      switch (e.key) {
+        case 'ArrowRight':
+          e.preventDefault();
+          video.currentTime = Math.min(video.currentTime + 10, video.duration);
+          showControlsTemporarily();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          video.currentTime = Math.max(video.currentTime - 10, 0);
+          showControlsTemporarily();
+          break;
+        case ' ':
+          e.preventDefault();
+          togglePlay();
+          showControlsTemporarily();
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          toggleMute();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, isFullscreen, isMuted, duration]); // Re-bind when state used in functions changes
+
   // Handle auto-rotate on fullscreen
   useEffect(() => {
     if (isFullscreen && window.innerWidth < 768) {

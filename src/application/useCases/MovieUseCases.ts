@@ -30,7 +30,37 @@ export async function getHomeMovies(): Promise<HomePageData> {
 // ─── Movie Details ───────────────────────────────────────────
 
 export async function getMovieDetails(slug: string): Promise<Movie | null> {
-  return movieRepository.getMovieDetails(slug);
+  const movie = await movieRepository.getMovieDetails(slug);
+  
+  if (movie && movie.tmdb?.id) {
+    try {
+      // Fetch additional sources from phimapi.com
+      const res = await fetch(`https://phimapi.com/tmdb/${movie.tmdb.type}/${movie.tmdb.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.episodes && Array.isArray(data.episodes)) {
+          if (!movie.servers) movie.servers = [];
+          
+          data.episodes.forEach((s: any) => {
+            movie.servers!.push({
+              serverName: s.server_name || 'Nguồn Phụ',
+              episodes: s.server_data.map((ep: any) => ({
+                name: ep.name,
+                slug: ep.slug,
+                filename: ep.filename || '',
+                linkEmbed: ep.link_embed || '',
+                linkM3u8: ep.link_m3u8 || ''
+              }))
+            });
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching additional movie sources:', e);
+    }
+  }
+  
+  return movie;
 }
 
 // ─── Search ──────────────────────────────────────────────────
