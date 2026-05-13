@@ -7,7 +7,6 @@ interface Props {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
-export const unstable_instant = { prefetch: 'static' };
 
 const TITLES: Record<string, string> = {
   'phim-moi-cap-nhat': 'Phim Mới Cập Nhật',

@@ -8,7 +8,6 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export const unstable_instant = { prefetch: 'static' };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
