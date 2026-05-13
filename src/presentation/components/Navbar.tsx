@@ -13,13 +13,14 @@ const NAV_LINKS = [
   { href: '/danh-sach/phim-moi-cap-nhat', label: 'Phim mới' },
   { href: '/danh-sach/phim-le', label: 'Phim lẻ' },
   { href: '/danh-sach/phim-bo', label: 'Phim bộ' },
-  { href: '/danh-sach/hoat-hinh', label: 'Hoạt hình' },
-  { href: '/danh-sach/tv-shows', label: 'TV Shows' },
+  { href: '/danh-sach/phim-chieu-rap', label: 'Chiếu rạp' },
   { href: '/yeu-thich', label: 'Yêu thích' },
   { href: '/lich-su', label: 'Lịch sử' },
 ];
 
 const MORE_LINKS = [
+  { href: '/danh-sach/hoat-hinh', label: 'Hoạt hình' },
+  { href: '/danh-sach/tv-shows', label: 'TV Shows' },
   { href: '/danh-sach/phim-vietsub', label: 'Phim Vietsub' },
   { href: '/danh-sach/phim-thuyet-minh', label: 'Phim Thuyết Minh' },
   { href: '/danh-sach/phim-long-tieng', label: 'Phim Lồng Tiếng' },
@@ -27,7 +28,6 @@ const MORE_LINKS = [
   { href: '/danh-sach/phim-bo-hoan-thanh', label: 'Phim Hoàn Thành' },
   { href: '/danh-sach/phim-sap-chieu', label: 'Phim Sắp Chiếu' },
   { href: '/danh-sach/subteam', label: 'Subteam' },
-  { href: '/danh-sach/phim-chieu-rap', label: 'Phim Chiếu Rạp' },
 ];
 
 export default function Navbar() {
@@ -213,47 +213,54 @@ export default function Navbar() {
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="md:hidden overflow-hidden border-t border-zinc-800/50"
+              initial={{ x: '100%', opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-0 top-[64px] z-40 md:hidden bg-zinc-950/98 backdrop-blur-2xl overflow-y-auto scrollbar-hide pb-20 border-t border-zinc-800/50"
             >
-              <div className="py-4 space-y-1">
-                {NAV_LINKS.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      'block px-4 py-3 rounded-lg text-sm font-medium transition-colors',
-                      pathname === link.href
-                        ? 'text-white bg-white/10'
-                        : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                    )}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
+              <div className="py-6 px-4 space-y-1">
+                <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4 px-2">
+                  Danh mục chính
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {NAV_LINKS.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        'block px-4 py-3.5 rounded-xl text-base font-bold transition-all active:scale-95',
+                        pathname === link.href
+                          ? 'text-white bg-red-600 shadow-lg shadow-red-600/20'
+                          : 'text-zinc-400 bg-white/5 hover:text-white'
+                      )}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
                 
-                <div className="pt-4 pb-2 px-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">
+                <div className="pt-8 pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest px-2">
                   Khám phá thêm
                 </div>
-                {MORE_LINKS.map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      'block px-4 py-3 rounded-lg text-sm font-medium transition-colors ml-4 border-l border-zinc-800',
-                      pathname === link.href
-                        ? 'text-white border-red-500 bg-white/5'
-                        : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                    )}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
+                <div className="grid grid-cols-2 gap-2">
+                  {MORE_LINKS.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        'block px-4 py-3 rounded-xl text-sm font-semibold transition-all border border-zinc-800/50 active:scale-95',
+                        pathname === link.href
+                          ? 'text-white border-red-500 bg-red-500/10'
+                          : 'text-zinc-400 bg-white/5 hover:text-white'
+                      )}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
               </div>
             </motion.div>
           )}
