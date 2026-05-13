@@ -12,6 +12,7 @@ import {
   Minimize,
   Settings,
   Loader2,
+  RotateCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -68,6 +69,7 @@ function HLSPlayer({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isRotated, setIsRotated] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Resume progress logic
@@ -166,6 +168,40 @@ function HLSPlayer({
     };
   }, []);
 
+  // Fullscreen sync logic
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      setIsFullscreen(isCurrentlyFullscreen);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
+
+  // Handle auto-rotate on fullscreen
+  useEffect(() => {
+    if (isFullscreen && window.innerWidth < 768) {
+      // Auto-suggest rotation or just allow manual
+    } else if (!isFullscreen) {
+      setIsRotated(false);
+    }
+  }, [isFullscreen]);
+
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
@@ -185,14 +221,53 @@ function HLSPlayer({
     setIsMuted(video.muted);
   };
 
+  const toggleRotation = () => {
+    setIsRotated(!isRotated);
+  };
+
   const toggleFullscreen = async () => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      await containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
+    const container = containerRef.current;
+    const video = videoRef.current;
+    if (!container || !video) return;
+
+    const isCurrentlyFullscreen = !!(
+      document.fullscreenElement ||
+      (document as any).webkitFullscreenElement ||
+      (document as any).mozFullScreenElement ||
+      (document as any).msFullscreenElement
+    );
+
+    if (!isCurrentlyFullscreen) {
+      try {
+        if (container.requestFullscreen) {
+          await container.requestFullscreen();
+        } else if ((container as any).webkitRequestFullscreen) {
+          await (container as any).webkitRequestFullscreen();
+        } else if ((container as any).mozRequestFullScreen) {
+          await (container as any).mozRequestFullScreen();
+        } else if ((container as any).msRequestFullscreen) {
+          await (container as any).msRequestFullscreen();
+        } else if ((video as any).webkitEnterFullscreen) {
+          // Fallback for iOS Safari which only supports fullscreen on the video element
+          (video as any).webkitEnterFullscreen();
+        }
+      } catch (err) {
+        console.error('Error attempting to enable full-screen mode:', err);
+      }
     } else {
-      await document.exitFullscreen();
-      setIsFullscreen(false);
+      try {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen();
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen();
+        }
+      } catch (err) {
+        console.error('Error attempting to exit full-screen mode:', err);
+      }
     }
   };
 
@@ -223,7 +298,18 @@ function HLSPlayer({
   return (
     <div
       ref={containerRef}
-      className="relative w-full aspect-video bg-black rounded-xl overflow-hidden group"
+      className={cn(
+        "relative w-full bg-black overflow-hidden group transition-all duration-300",
+        isFullscreen ? "fixed inset-0 z-[9999] rounded-0" : "aspect-video rounded-xl",
+        isRotated && isFullscreen && "rotate-90 origin-center"
+      )}
+      style={isRotated && isFullscreen ? { 
+        width: '100vh', 
+        height: '100vw', 
+        top: '50%', 
+        left: '50%', 
+        transform: 'translate(-50%, -50%) rotate(90deg)' 
+      } : {}}
       onMouseMove={showControlsTemporarily}
       onMouseLeave={() => isPlaying && setShowControls(false)}
     >
@@ -302,9 +388,19 @@ function HLSPlayer({
             <button
               onClick={toggleFullscreen}
               className="text-white hover:text-red-500 transition-colors"
+              title="Toàn màn hình"
             >
               {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
             </button>
+            {isFullscreen && (
+              <button
+                onClick={toggleRotation}
+                className="text-white hover:text-red-500 transition-colors md:hidden"
+                title="Xoay màn hình"
+              >
+                <RotateCw className={cn("w-5 h-5 transition-transform", isRotated && "rotate-90")} />
+              </button>
+            )}
           </div>
         </div>
       </div>

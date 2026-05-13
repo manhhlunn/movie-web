@@ -29,6 +29,10 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "apii.ophim.live",
       },
+      {
+        protocol: "https",
+        hostname: "image.tmdb.org",
+      },
     ],
   },
 };

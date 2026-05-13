@@ -104,6 +104,13 @@ export function mapMovieFromList(
     tmdbVoteAverage: safeNumber((raw?.tmdb as Record<string, unknown>)?.vote_average),
     imdbRating: safeNumber((raw?.imdb as Record<string, unknown>)?.vote_average),
     imdbId: safeString((raw?.imdb as Record<string, unknown>)?.id),
+    tmdb: raw?.tmdb ? {
+      type: safeString((raw.tmdb as any).type) as 'movie' | 'tv',
+      id: safeString((raw.tmdb as any).id),
+      season: safeNumber((raw.tmdb as any).season),
+      voteAverage: safeNumber((raw.tmdb as any).vote_average),
+      voteCount: safeNumber((raw.tmdb as any).vote_count),
+    } : undefined,
     trailerUrl: safeString(raw?.trailer_url) || undefined,
     modifiedTime: safeString((raw?.modified as Record<string, unknown>)?.time),
   };

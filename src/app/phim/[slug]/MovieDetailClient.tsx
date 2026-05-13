@@ -20,7 +20,7 @@ function getYouTubeEmbedId(url: string): string | null {
 
 export default function MovieDetailClient({ slug }: { slug: string }) {
   const { data: movie, isLoading, isError } = useMovieDetails(slug);
-  const { data: extra } = useMovieExtraDetails(slug);
+  const { data: extra } = useMovieExtraDetails(slug, movie?.tmdb);
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
@@ -295,16 +295,27 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
               <div>
                 <h3 className="text-xl font-bold font-outfit mb-6 flex items-center gap-2">
                   <Users className="w-6 h-6 text-red-500" />
-                  Đội Ngũ Sản Xuất
+                  Dàn Diễn Viên
                 </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {extra.peoples.map((person: any) => (
-                    <div key={person._id || person.name} className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800 flex flex-col items-center text-center hover:bg-zinc-800 transition-colors">
-                      <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center text-xl font-bold text-zinc-500 mb-3 shadow-inner">
-                        {person.name.charAt(0)}
+                <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
+                  {extra.peoples.map((person: any, i: number) => (
+                    <div key={i} className="flex flex-col items-center text-center min-w-[100px] group">
+                      <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden mb-3 border-2 border-zinc-800 group-hover:border-red-500 transition-colors shadow-xl bg-zinc-900">
+                        {person.image ? (
+                          <Image src={person.image} alt={person.name} fill className="object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-zinc-600 bg-zinc-800">
+                            {person.name.charAt(0)}
+                          </div>
+                        )}
                       </div>
-                      <span className="text-sm font-semibold text-zinc-200 line-clamp-1">{person.name}</span>
-                      <span className="text-xs text-zinc-500 mt-1">{person.role || 'Diễn viên'}</span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-bold text-white line-clamp-1 px-1">{person.name}</span>
+                        {person.originalName && (
+                          <span className="text-[10px] text-zinc-400 line-clamp-1 italic px-1">({person.originalName})</span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-zinc-500 mt-1 line-clamp-1 px-1">{person.role || 'Diễn viên'}</span>
                     </div>
                   ))}
                 </div>

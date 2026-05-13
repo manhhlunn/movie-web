@@ -15,6 +15,7 @@ import {
   getMovieList,
   getExploreMovies,
 } from '@/application/useCases/MovieUseCases';
+import { Movie } from '@/domain/entities/Movie';
 
 export function useHomeMovies() {
   return useQuery({
@@ -73,20 +74,82 @@ export function useExploreMovies(
   });
 }
 
-export function useMovieExtraDetails(slug: string) {
+export function useMovieExtraDetails(slug: string, tmdb?: Movie['tmdb']) {
   return useQuery({
-    queryKey: ['movie-extra', slug],
+    queryKey: ['movie-extra', slug, tmdb?.id],
     queryFn: async () => {
       try {
-        const [imgRes, pplRes, kwRes] = await Promise.all([
+        const token = process.env.NEXT_PUBLIC_TMDB_TOKEN || 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIwZWFmN2NiN2FmMzBmYzA2MzMzMTc5NzcwOWYwM2Y3OSIsIm5iZiI6MTY5NDM5OTU0My43NTksInN1YiI6IjY0ZmU3YzM3ZTBjYTdmMDBjYmU5YjJmNSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.neCfOUwWVTvCaFB_Jyy4EH2gDRA5F7YeC7vdNINjj-A';
+        
+        const fetchTmdb = async (path: string) => {
+          if (!tmdb?.id) return null;
+          const url = `https://api.themoviedb.org/3/${tmdb.type}/${tmdb.id}${path}?language=vi-VN`;
+          const options = {
+            method: 'GET',
+            headers: {
+              accept: 'application/json',
+              Authorization: `Bearer ${token}`
+            }
+          };
+
+          const res = await fetch(url, options);
+          if (!res.ok) {
+            return fetch(`https://api.themoviedb.org/3/${tmdb.type}/${tmdb.id}${path}`, options).then(r => r.ok ? r.json() : null);
+          }
+          return res.json();
+        };
+
+        const fetchTmdbEn = async (path: string) => {
+          if (!tmdb?.id) return null;
+          const url = `https://api.themoviedb.org/3/${tmdb.type}/${tmdb.id}${path}?language=en-US`;
+          const options = {
+            method: 'GET',
+            headers: {
+              accept: 'application/json',
+              Authorization: `Bearer ${token}`
+            }
+          };
+          return fetch(url, options).then(r => r.ok ? r.json() : null);
+        };
+
+        const [imgRes, pplRes, kwRes, tmdbImgs, tmdbCredits] = await Promise.all([
           fetch(`https://ophim1.com/v1/api/phim/${slug}/images`).then(r => r.ok ? r.json() : null).catch(() => null),
           fetch(`https://ophim1.com/v1/api/phim/${slug}/peoples`).then(r => r.ok ? r.json() : null).catch(() => null),
-          fetch(`https://ophim1.com/v1/api/phim/${slug}/keywords`).then(r => r.ok ? r.json() : null).catch(() => null)
+          fetch(`https://ophim1.com/v1/api/phim/${slug}/keywords`).then(r => r.ok ? r.json() : null).catch(() => null),
+          tmdb?.id ? fetchTmdb('/images') : null,
+          tmdb?.id ? fetchTmdbEn('/credits') : null, // Fetch credits in English
         ]);
 
+        let images = imgRes?.data?.items || [];
+        if (tmdbImgs?.backdrops?.length > 0) {
+          const tmdbImages = tmdbImgs.backdrops.slice(0, 15).map((img: any) => ({
+            url: `https://image.tmdb.org/t/p/original${img.file_path}`
+          }));
+          images = [...tmdbImages, ...images];
+        }
+
+        let tmdbCast: any[] = [];
+        if (tmdbCredits?.cast?.length > 0) {
+          tmdbCast = tmdbCredits.cast.map((person: any) => ({
+            name: person.name, // This will be the English name because we fetched with en-US
+            originalName: (person.original_name && person.original_name !== person.name) ? person.original_name : null,
+            role: person.character,
+            image: person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : null
+          }));
+        }
+
+        let peoples = tmdbCast;
+        const ophimPeoples = pplRes?.data?.items || [];
+        
+        // Add OPhim peoples that aren't already in the TMDB cast (based on name)
+        const tmdbNames = new Set(tmdbCast.map(p => p.name.toLowerCase()));
+        const uniqueOphimPeoples = ophimPeoples.filter((p: any) => !tmdbNames.has(p.name.toLowerCase()));
+        
+        peoples = [...peoples, ...uniqueOphimPeoples];
+
         return {
-          images: imgRes?.data?.items || [],
-          peoples: pplRes?.data?.items || [],
+          images,
+          peoples,
           keywords: kwRes?.data?.items || [],
         };
       } catch (e) {

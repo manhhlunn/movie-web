@@ -56,6 +56,13 @@ export interface Movie {
   tmdbVoteAverage: number;
   imdbRating: number;
   imdbId: string;
+  tmdb?: {
+    type: 'movie' | 'tv';
+    id: string;
+    season?: number;
+    voteAverage?: number;
+    voteCount?: number;
+  };
   /** Only available in detail responses */
   servers?: ServerData[];
   /** Trailer URL if available */

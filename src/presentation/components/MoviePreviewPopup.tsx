@@ -5,9 +5,10 @@ import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Plus, ThumbsUp, ChevronDown, Volume2, VolumeX, Clock, Film, Star } from 'lucide-react';
+import { Play, Heart, ChevronDown, Volume2, VolumeX, Clock, Film, Star } from 'lucide-react';
 import { Movie } from '@/domain/entities/Movie';
 import { cn } from '@/lib/utils';
+import { isFavorite, toggleFavorite } from '@/lib/userStore';
 
 interface MoviePreviewPopupProps {
   movie: Movie;
@@ -26,11 +27,13 @@ function getYouTubeEmbedId(url: string): string | null {
 export default function MoviePreviewPopup({ movie, rect, onClose, onMouseEnter, onMouseLeave }: MoviePreviewPopupProps) {
   const [mounted, setMounted] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  const [favorite, setFavorite] = useState(false);
   const trailerEmbedId = movie.trailerUrl ? getYouTubeEmbedId(movie.trailerUrl) : null;
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
+    setFavorite(isFavorite(movie.slug));
     
     const handleScroll = () => {
       onClose();
@@ -142,11 +145,20 @@ export default function MoviePreviewPopup({ movie, rect, onClose, onMouseEnter, 
               >
                 <Play className="w-8 h-8 text-black fill-black ml-1" />
               </Link>
-              <button className="w-12 h-12 rounded-full border-2 border-zinc-500 flex items-center justify-center hover:border-white transition-all hover:scale-110 text-white">
-                <Plus className="w-6 h-6" />
-              </button>
-              <button className="w-12 h-12 rounded-full border-2 border-zinc-500 flex items-center justify-center hover:border-white transition-all hover:scale-110 text-white">
-                <ThumbsUp className="w-6 h-6" />
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const newState = toggleFavorite(movie);
+                  setFavorite(newState);
+                }}
+                className={cn(
+                  "w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all hover:scale-110",
+                  favorite ? "border-red-600 bg-red-600/10 text-red-600" : "border-zinc-500 text-white hover:border-white"
+                )}
+                title={favorite ? "Xóa khỏi yêu thích" : "Thêm vào yêu thích"}
+              >
+                <Heart className={cn("w-6 h-6", favorite && "fill-current")} />
               </button>
             </div>
             <Link 
