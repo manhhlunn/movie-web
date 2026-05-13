@@ -230,44 +230,47 @@ function HLSPlayer({
     const video = videoRef.current;
     if (!container || !video) return;
 
-    const isCurrentlyFullscreen = !!(
+    const isCurrentlyRealFullscreen = !!(
       document.fullscreenElement ||
       (document as any).webkitFullscreenElement ||
       (document as any).mozFullScreenElement ||
       (document as any).msFullscreenElement
     );
 
-    if (!isCurrentlyFullscreen) {
-      try {
-        if (container.requestFullscreen) {
-          await container.requestFullscreen();
-        } else if ((container as any).webkitRequestFullscreen) {
-          await (container as any).webkitRequestFullscreen();
-        } else if ((container as any).mozRequestFullScreen) {
-          await (container as any).mozRequestFullScreen();
-        } else if ((container as any).msRequestFullscreen) {
-          await (container as any).msRequestFullscreen();
-        } else if ((video as any).webkitEnterFullscreen) {
-          // Fallback for iOS Safari which only supports fullscreen on the video element
-          (video as any).webkitEnterFullscreen();
+    if (isFullscreen) {
+      if (isCurrentlyRealFullscreen) {
+        try {
+          if (document.exitFullscreen) await document.exitFullscreen();
+          else if ((document as any).webkitExitFullscreen) await (document as any).webkitExitFullscreen();
+          else if ((document as any).mozCancelFullScreen) await (document as any).mozCancelFullScreen();
+          else if ((document as any).msExitFullscreen) await (document as any).msExitFullscreen();
+        } catch (err) {
+          console.error('Error exiting fullscreen', err);
         }
-      } catch (err) {
-        console.error('Error attempting to enable full-screen mode:', err);
       }
-    } else {
-      try {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          await (document as any).webkitExitFullscreen();
-        } else if ((document as any).mozCancelFullScreen) {
-          await (document as any).mozCancelFullScreen();
-        } else if ((document as any).msExitFullscreen) {
-          await (document as any).msExitFullscreen();
-        }
-      } catch (err) {
-        console.error('Error attempting to exit full-screen mode:', err);
+      setIsFullscreen(false);
+      setIsRotated(false);
+      return;
+    }
+
+    try {
+      // Try official Fullscreen API first (works on Desktop, Android, iPad)
+      if (container.requestFullscreen) {
+        await container.requestFullscreen();
+      } else if ((container as any).webkitRequestFullscreen) {
+        await (container as any).webkitRequestFullscreen();
+      } else if ((container as any).mozRequestFullScreen) {
+        await (container as any).mozRequestFullScreen();
+      } else if ((container as any).msRequestFullscreen) {
+        await (container as any).msRequestFullscreen();
+      } else {
+        // Fallback to Full Window mode for iOS iPhone
+        // This keeps our custom controls and rotation button visible
+        setIsFullscreen(true);
       }
+    } catch (err) {
+      // If all fails, still trigger Full Window mode
+      setIsFullscreen(true);
     }
   };
 
