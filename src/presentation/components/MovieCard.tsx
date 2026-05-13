@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Clock, Film } from 'lucide-react';
+import { Play, Clock, Film, Star } from 'lucide-react';
 import { Movie } from '@/domain/entities/Movie';
 import { cn } from '@/lib/utils';
 import { useMovieDetails } from '@/presentation/hooks/useMovies';
@@ -166,6 +166,12 @@ export default function MovieCard({ movie: listMovie, index = 0, className }: Mo
                   {movie.name}
                 </h3>
                 <div className="flex flex-wrap gap-1">
+                  {movie.imdbRating > 0 && (
+                    <span className="px-1.5 py-0.5 bg-yellow-500 text-[9px] font-black text-black rounded flex items-center gap-0.5">
+                      <Star className="w-2 h-2 fill-current" />
+                      {movie.imdbRating}
+                    </span>
+                  )}
                   {movie.quality && (
                     <span className="px-1.5 py-0.5 bg-red-600 text-[9px] font-black text-white rounded uppercase tracking-wide">
                       {movie.quality}

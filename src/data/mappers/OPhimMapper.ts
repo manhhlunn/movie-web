@@ -102,6 +102,7 @@ export function mapMovieFromList(
     actors: Array.isArray(raw?.actor) ? raw.actor.map(String) : [],
     directors: Array.isArray(raw?.director) ? raw.director.map(String) : [],
     tmdbVoteAverage: safeNumber((raw?.tmdb as Record<string, unknown>)?.vote_average),
+    imdbRating: safeNumber((raw?.imdb as Record<string, unknown>)?.vote_average),
     imdbId: safeString((raw?.imdb as Record<string, unknown>)?.id),
     trailerUrl: safeString(raw?.trailer_url) || undefined,
     modifiedTime: safeString((raw?.modified as Record<string, unknown>)?.time),

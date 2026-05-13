@@ -54,6 +54,7 @@ export interface Movie {
   actors: string[];
   directors: string[];
   tmdbVoteAverage: number;
+  imdbRating: number;
   imdbId: string;
   /** Only available in detail responses */
   servers?: ServerData[];

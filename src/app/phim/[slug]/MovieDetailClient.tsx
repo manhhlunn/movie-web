@@ -136,6 +136,12 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
             </div>
 
             <div className="flex flex-wrap items-center gap-4 text-sm font-medium">
+              {movie.imdbRating > 0 && (
+                <div className="flex items-center px-3 py-1 bg-yellow-500 text-black rounded-md font-bold">
+                  <Star className="w-4 h-4 mr-1.5 fill-current" />
+                  {movie.imdbRating}
+                </div>
+              )}
               <span className="px-3 py-1 bg-primary text-white rounded-md">
                 {movie.quality}
               </span>
@@ -193,6 +199,16 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
               >
                 <Heart className={cn("w-6 h-6 transition-transform duration-300", isBookmarked ? "fill-red-600 scale-110" : "scale-100")} />
               </button>
+              {movie.imdbId && (
+                <a
+                  href={`https://www.imdb.com/title/${movie.imdbId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center px-6 py-3.5 bg-[#f5c518] text-black font-bold rounded-lg hover:bg-[#e2b616] transition-colors shadow-lg"
+                >
+                  IMDb
+                </a>
+              )}
             </div>
 
             <div className="prose prose-invert max-w-none pt-4">
