@@ -51,7 +51,7 @@ export default function Home() {
         <ContinueWatching />
       </div>
 
-      <div className="space-y-4 -mt-20 relative z-10">
+      <div className="space-y-4 relative z-10">
         <MovieSlider 
           title={`Phim Bộ Hàn Quốc ${currentYear}`} 
           movies={heroData?.items || []} 

@@ -12,10 +12,15 @@ export default function ContinueWatching() {
   const [history, setHistory] = useState<Movie[]>([]);
 
   useEffect(() => {
-    const data = getHistory();
-    // Filter only those with progress
-    const watching = data.filter(m => m.lastEpisodeSlug);
-    setHistory(watching.slice(0, 10));
+    const refreshHistory = () => {
+      const data = getHistory();
+      // Show all history, but slice to top 10
+      setHistory(data.slice(0, 12));
+    };
+
+    refreshHistory();
+    window.addEventListener('focus', refreshHistory);
+    return () => window.removeEventListener('focus', refreshHistory);
   }, []);
 
   if (history.length === 0) return null;
@@ -35,48 +40,59 @@ export default function ContinueWatching() {
           className="flex gap-4 overflow-x-auto pb-6 pt-2 scrollbar-hide px-4 sm:px-6"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {history.map((movie) => (
-            <motion.div
-              key={movie.slug}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex-none w-64 md:w-80 group"
-            >
-              <Link href={`/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}`} className="block relative">
-                <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 shadow-lg">
-                  <Image
-                    src={movie.posterUrl}
-                    alt={movie.name}
-                    fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-110"
-                    unoptimized
-                  />
-                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                    <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center transform scale-0 group-hover:scale-100 transition-transform shadow-xl">
-                      <Play className="w-6 h-6 text-white fill-white ml-1" />
-                    </div>
-                  </div>
-                  
-                  {/* Progress Bar */}
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-                    <div 
-                      className="h-full bg-red-600" 
-                      style={{ width: '40%' }} // Mock progress
-                    />
-                  </div>
-                </div>
+          {history.map((movie) => {
+            const hasProgress = !!movie.lastEpisodeSlug;
+            const href = hasProgress 
+              ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}` 
+              : `/phim/${movie.slug}`;
 
-                <div className="mt-3 space-y-1 px-1">
-                  <h3 className="text-white font-bold text-sm md:text-base truncate group-hover:text-red-500 transition-colors">
-                    {movie.name}
-                  </h3>
-                  <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider">
-                    Tiếp tục: Tập {movie.lastEpisodeSlug?.split('-').pop()}
-                  </p>
-                </div>
-              </Link>
-            </motion.div>
-          ))}
+            return (
+              <motion.div
+                key={movie.slug}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex-none w-64 md:w-80 group"
+              >
+                <Link href={href} className="block relative">
+                  <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 shadow-lg">
+                    <Image
+                      src={movie.posterUrl}
+                      alt={movie.name}
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                      unoptimized
+                    />
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                      <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center transform scale-0 group-hover:scale-100 transition-transform shadow-xl">
+                        <Play className="w-6 h-6 text-white fill-white ml-1" />
+                      </div>
+                    </div>
+                    
+                    {/* Progress Bar (only if has progress) */}
+                    {hasProgress && (
+                      <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
+                        <div 
+                          className="h-full bg-red-600" 
+                          style={{ width: '40%' }} // Mock progress
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 space-y-1 px-1">
+                    <h3 className="text-white font-bold text-sm md:text-base truncate group-hover:text-red-500 transition-colors">
+                      {movie.name}
+                    </h3>
+                    <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider">
+                      {hasProgress 
+                        ? `Tiếp tục: Tập ${movie.lastEpisodeSlug?.split('-').pop()}` 
+                        : 'Xem ngay'}
+                    </p>
+                  </div>
+                </Link>
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>
