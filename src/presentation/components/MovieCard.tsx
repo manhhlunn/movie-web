@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,7 +22,7 @@ function getYouTubeEmbedId(url: string): string | null {
   return match?.[1] ?? null;
 }
 
-export default function MovieCard({ movie: listMovie, index = 0, className }: MovieCardProps) {
+const MovieCard = memo(({ movie: listMovie, index = 0, className }: MovieCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
   const [cardRect, setCardRect] = useState<DOMRect | null>(null);
@@ -88,9 +88,10 @@ export default function MovieCard({ movie: listMovie, index = 0, className }: Mo
     <>
       <motion.div
         ref={cardRef}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, delay: Math.min(index * 0.04, 0.4) }}
+        initial={{ opacity: 0, y: 10 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "100px" }}
+        transition={{ duration: 0.3, delay: Math.min((index % 8) * 0.05, 0.3) }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className={cn(
@@ -107,10 +108,10 @@ export default function MovieCard({ movie: listMovie, index = 0, className }: Mo
               src={imageSrc}
               alt={movie.name}
               fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 20vw"
-              quality={85}
-              priority={index < 4}
-              loading={index < 4 ? 'eager' : 'lazy'}
+              sizes="(max-width: 640px) 40vw, (max-width: 1024px) 20vw, 15vw"
+              quality={75}
+              priority={index < 2}
+              loading={index < 6 ? 'eager' : 'lazy'}
               className={cn(
                 'object-cover transition-all duration-500 group-hover:scale-110'
               )}
@@ -223,4 +224,7 @@ export default function MovieCard({ movie: listMovie, index = 0, className }: Mo
       </AnimatePresence>
     </>
   );
-}
+});
+
+MovieCard.displayName = 'MovieCard';
+export default MovieCard;

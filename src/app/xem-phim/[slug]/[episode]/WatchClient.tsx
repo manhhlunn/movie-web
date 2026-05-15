@@ -90,6 +90,7 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
             poster={movie.posterUrl || movie.thumbUrl}
             movieSlug={slug}
             episodeSlug={episode}
+            movie={movie}
           />
         )}
       </div>

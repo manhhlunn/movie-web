@@ -15,6 +15,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { addToHistory } from '@/lib/userStore';
 
 const ReactPlayer = dynamic(() => import('react-player'), { ssr: false });
 
@@ -25,12 +26,13 @@ interface VideoPlayerProps {
   poster?: string;
   movieSlug?: string;
   episodeSlug?: string;
+  movie?: any;
 }
 
-export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug }: VideoPlayerProps) {
+export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug, movie }: VideoPlayerProps) {
   // If we have an m3u8 link, use custom HLS player. Otherwise fall back to iframe.
   if (linkM3u8) {
-    return <HLSPlayer url={linkM3u8} title={title} poster={poster} movieSlug={movieSlug} episodeSlug={episodeSlug} />;
+    return <HLSPlayer url={linkM3u8} title={title} poster={poster} movieSlug={movieSlug} episodeSlug={episodeSlug} movie={movie} />;
   }
 
   if (linkEmbed) {
@@ -51,13 +53,15 @@ function HLSPlayer({
   title, 
   poster, 
   movieSlug, 
-  episodeSlug 
+  episodeSlug,
+  movie
 }: { 
   url: string; 
   title?: string; 
   poster?: string;
   movieSlug?: string;
   episodeSlug?: string;
+  movie?: any;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -103,11 +107,16 @@ function HLSPlayer({
           updatedAt: Date.now(),
         };
         localStorage.setItem(`watch-progress-${movieSlug}`, JSON.stringify(progress));
+        
+        // Update global history for Home page
+        if (movie) {
+          addToHistory(movie, episodeSlug, video.currentTime);
+        }
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [movieSlug, episodeSlug]);
+  }, [movieSlug, episodeSlug, movie]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -125,6 +134,7 @@ function HLSPlayer({
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsLoading(false);
+        video.play().then(() => setIsPlaying(true)).catch(() => {});
       });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
@@ -135,7 +145,10 @@ function HLSPlayer({
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS
       video.src = url;
-      video.addEventListener('loadedmetadata', () => setIsLoading(false));
+      video.addEventListener('loadedmetadata', () => {
+        setIsLoading(false);
+        video.play().then(() => setIsPlaying(true)).catch(() => {});
+      });
     }
 
     return () => {

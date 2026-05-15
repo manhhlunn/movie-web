@@ -21,6 +21,9 @@ export interface IMovieRepository {
   /** Get TV shows (paginated) */
   getTvShows(page?: number): Promise<MovieListResult>;
 
+  /** Get cinema movies / phim chiếu rạp (paginated) */
+  getCinemaMovies(page?: number): Promise<MovieListResult>;
+
   /** Get full movie detail by slug (includes episodes) */
   getMovieDetails(slug: string): Promise<Movie | null>;
 
@@ -28,13 +31,25 @@ export interface IMovieRepository {
   searchMovies(keyword: string, page?: number): Promise<MovieListResult>;
 
   /** Get movies by category slug */
-  getMoviesByCategory(categorySlug: string, page?: number): Promise<MovieListResult>;
-
+  getMoviesByCategory(
+    categorySlug: string, 
+    page?: number,
+    filters?: { category?: string, country?: string, year?: string }
+  ): Promise<MovieListResult>;
+  
   /** Get movies by country slug */
-  getMoviesByCountry(countrySlug: string, page?: number): Promise<MovieListResult>;
-
+  getMoviesByCountry(
+    countrySlug: string, 
+    page?: number,
+    filters?: { category?: string, country?: string, year?: string }
+  ): Promise<MovieListResult>;
+  
   /** Get movies by year */
-  getMoviesByYear(year: string, page?: number): Promise<MovieListResult>;
+  getMoviesByYear(
+    year: string, 
+    page?: number,
+    filters?: { category?: string, country?: string, year?: string }
+  ): Promise<MovieListResult>;
 
   /** Get generic list (phim-moi, phim-le, etc.) by slug with combination filters */
   getMoviesByList(

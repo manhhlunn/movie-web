@@ -48,6 +48,13 @@ class MovieRepositoryImpl implements IMovieRepository {
     return mapV1ListResponse(data);
   }
 
+  async getCinemaMovies(page = 1): Promise<MovieListResult> {
+    const { data } = await ophimClient.get(
+      `/v1/api/danh-sach/phim-chieu-rap?page=${page}`
+    );
+    return mapV1ListResponse(data);
+  }
+
   async getMovieDetails(slug: string): Promise<Movie | null> {
     try {
       const { data } = await ophimClient.get(`/phim/${slug}`);
@@ -72,33 +79,43 @@ class MovieRepositoryImpl implements IMovieRepository {
     return mapV1ListResponse(data);
   }
 
+  private buildFilterUrl(baseUrl: string, filters?: { category?: string; country?: string; year?: string }): string {
+    let url = baseUrl;
+    if (filters) {
+      if (filters.category) url += `${url.includes('?') ? '&' : '?'}category=${filters.category}`;
+      if (filters.country) url += `${url.includes('?') ? '&' : '?'}country=${filters.country}`;
+      if (filters.year) url += `${url.includes('?') ? '&' : '?'}year=${filters.year}`;
+    }
+    return url;
+  }
+
   async getMoviesByCategory(
     categorySlug: string,
-    page = 1
+    page = 1,
+    filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    const { data } = await ophimClient.get(
-      `/v1/api/the-loai/${categorySlug}?page=${page}`
-    );
+    const url = this.buildFilterUrl(`/v1/api/the-loai/${categorySlug}?page=${page}`, filters);
+    const { data } = await ophimClient.get(url);
     return mapV1ListResponse(data);
   }
 
   async getMoviesByCountry(
     countrySlug: string,
-    page = 1
+    page = 1,
+    filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    const { data } = await ophimClient.get(
-      `/v1/api/quoc-gia/${countrySlug}?page=${page}`
-    );
+    const url = this.buildFilterUrl(`/v1/api/quoc-gia/${countrySlug}?page=${page}`, filters);
+    const { data } = await ophimClient.get(url);
     return mapV1ListResponse(data);
   }
 
   async getMoviesByYear(
     year: string,
-    page = 1
+    page = 1,
+    filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    const { data } = await ophimClient.get(
-      `/v1/api/nam-phat-hanh/${year}?page=${page}`
-    );
+    const url = this.buildFilterUrl(`/v1/api/nam-phat-hanh/${year}?page=${page}`, filters);
+    const { data } = await ophimClient.get(url);
     return mapV1ListResponse(data);
   }
 

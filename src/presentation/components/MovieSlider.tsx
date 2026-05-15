@@ -1,8 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, memo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { Movie } from '@/domain/entities/Movie';
 import MovieCard from './MovieCard';
 import { cn } from '@/lib/utils';
@@ -14,12 +13,12 @@ interface MovieSliderProps {
   seeMoreHref?: string;
 }
 
-export default function MovieSlider({
+const MovieSlider = memo(({
   title,
   movies,
   variant = 'default',
   seeMoreHref,
-}: MovieSliderProps) {
+}: MovieSliderProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -46,15 +45,10 @@ export default function MovieSlider({
     <section className="relative py-6 md:py-8">
       {/* Header */}
       <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 mb-4">
-        <motion.h2
-          initial={{ opacity: 0, x: -20 }}
-          whileInView={{ opacity: 1, x: 0 }}
-          viewport={{ once: true }}
-          className="text-xl md:text-2xl font-bold text-white"
-        >
-          <span className="inline-block w-1 h-6 bg-red-600 rounded-full mr-3 align-middle" />
+        <h2 className="text-xl md:text-2xl font-bold text-white flex items-center">
+          <span className="inline-block w-1 h-6 bg-red-600 rounded-full mr-3" />
           {title}
-        </motion.h2>
+        </h2>
         {seeMoreHref && (
           <a
             href={seeMoreHref}
@@ -114,4 +108,7 @@ export default function MovieSlider({
       </div>
     </section>
   );
-}
+});
+
+MovieSlider.displayName = 'MovieSlider';
+export default MovieSlider;

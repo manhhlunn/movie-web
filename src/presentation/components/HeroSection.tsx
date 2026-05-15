@@ -53,7 +53,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.7 }}
+          transition={{ duration: 0.4 }}
           className="absolute inset-0"
         >
           <Image
@@ -63,7 +63,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             priority
             className="object-cover object-center md:object-top"
             sizes="100vw"
-            quality={90}
+            quality={80}
             unoptimized
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black via-black/70 to-transparent" />

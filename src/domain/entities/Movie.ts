@@ -56,6 +56,7 @@ export interface Movie {
   tmdbVoteAverage: number;
   imdbRating: number;
   imdbId: string;
+  imdbVoteCount: number;
   tmdb?: {
     type: 'movie' | 'tv';
     id: string;
@@ -69,6 +70,9 @@ export interface Movie {
   trailerUrl?: string;
   /** Last modified timestamp */
   modifiedTime?: string;
+  /** Watch progress fields */
+  lastEpisodeSlug?: string;
+  lastTime?: number;
 }
 
 export interface MovieListResult {

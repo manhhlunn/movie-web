@@ -14,6 +14,7 @@ const TITLES: Record<string, string> = {
   'phim-bo': 'Phim Bộ',
   'hoat-hinh': 'Phim Hoạt Hình',
   'tv-shows': 'TV Shows',
+  'phim-chieu-rap': 'Phim Chiếu Rạp',
   'phim-vietsub': 'Phim Vietsub',
   'phim-thuyet-minh': 'Phim Thuyết Minh',
   'phim-long-tieng': 'Phim Lồng Tiếng',
@@ -21,7 +22,6 @@ const TITLES: Record<string, string> = {
   'phim-bo-hoan-thanh': 'Phim Hoàn Thành',
   'phim-sap-chieu': 'Phim Sắp Chiếu',
   'subteam': 'Subteam',
-  'phim-chieu-rap': 'Phim Chiếu Rạp',
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

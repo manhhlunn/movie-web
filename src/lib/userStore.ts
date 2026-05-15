@@ -40,16 +40,30 @@ export const getHistory = (): Movie[] => {
   return stored ? JSON.parse(stored) : [];
 };
 
-export const addToHistory = (movie: Movie) => {
+export const addToHistory = (movie: Movie, lastEpisodeSlug?: string, lastTime?: number) => {
   const history = getHistory();
   const index = history.findIndex((m) => m.slug === movie.slug);
 
+  let movieToStore: Movie;
   if (index > -1) {
+    // Merge existing progress if not provided
+    const existing = history[index];
+    movieToStore = {
+      ...existing,
+      lastEpisodeSlug: lastEpisodeSlug || existing.lastEpisodeSlug,
+      lastTime: lastTime || existing.lastTime,
+    };
     history.splice(index, 1);
+  } else {
+    const { id, name, slug, posterUrl, thumbUrl, quality, year, lang, episodeCurrent } = movie;
+    movieToStore = { 
+      id, name, slug, posterUrl, thumbUrl, quality, year, lang, episodeCurrent,
+      lastEpisodeSlug,
+      lastTime
+    } as Movie;
   }
 
-  const { id, name, slug, posterUrl, thumbUrl, quality, year, lang, episodeCurrent } = movie;
-  history.unshift({ id, name, slug, posterUrl, thumbUrl, quality, year, lang, episodeCurrent } as Movie);
+  history.unshift(movieToStore);
 
   if (history.length > MAX_HISTORY) {
     history.pop();

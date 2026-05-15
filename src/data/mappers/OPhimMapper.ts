@@ -104,6 +104,7 @@ export function mapMovieFromList(
     tmdbVoteAverage: safeNumber((raw?.tmdb as Record<string, unknown>)?.vote_average),
     imdbRating: safeNumber((raw?.imdb as Record<string, unknown>)?.vote_average),
     imdbId: safeString((raw?.imdb as Record<string, unknown>)?.id),
+    imdbVoteCount: safeNumber((raw?.imdb as Record<string, unknown>)?.vote_count),
     tmdb: raw?.tmdb ? {
       type: safeString((raw.tmdb as any).type) as 'movie' | 'tv',
       id: safeString((raw.tmdb as any).id),
