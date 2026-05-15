@@ -189,7 +189,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             {validMovies.map((m, i) => (
               <button
                 key={m.slug}
-                ref={(el) => (thumbRefs.current[i] = el)}
+                ref={(el) => { thumbRefs.current[i] = el; }}
                 onClick={() => goTo(i)}
                 className={cn(
                   'relative overflow-hidden rounded-lg border-2 transition-all duration-300 flex-shrink-0',
