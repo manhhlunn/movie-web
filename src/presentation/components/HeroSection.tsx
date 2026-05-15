@@ -17,6 +17,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const autoPlayRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const containerRef = useRef<HTMLElement>(null);
 
   const validMovies = movies?.slice(0, 5) || [];
   const movie = validMovies[activeIndex];
@@ -35,12 +36,20 @@ export default function HeroSection({ movies }: HeroSectionProps) {
   // Scroll active thumb into view
   useEffect(() => {
     const activeThumb = thumbRefs.current[activeIndex];
-    if (activeThumb) {
-      activeThumb.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center'
-      });
+    const container = containerRef.current;
+    
+    if (activeThumb && container) {
+      // Only scroll if the hero section is somewhat visible
+      const rect = container.getBoundingClientRect();
+      const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
+      
+      if (isVisible) {
+        activeThumb.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center'
+        });
+      }
     }
   }, [activeIndex]);
 
@@ -58,7 +67,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
   const firstEpisodeSlug = movie.servers?.[0]?.episodes?.[0]?.slug;
 
   return (
-    <section className="relative w-full h-[60vh] md:h-[90vh] lg:h-screen overflow-hidden">
+    <section ref={containerRef} className="relative w-full h-[60vh] md:h-[90vh] lg:h-screen overflow-hidden">
       {/* Background images with cross-fade */}
       <AnimatePresence mode="sync">
         <motion.div
