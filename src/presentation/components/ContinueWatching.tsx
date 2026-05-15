@@ -20,7 +20,14 @@ export default function ContinueWatching() {
 
     refreshHistory();
     window.addEventListener('focus', refreshHistory);
-    return () => window.removeEventListener('focus', refreshHistory);
+    window.addEventListener('pageshow', refreshHistory);
+    document.addEventListener('visibilitychange', refreshHistory);
+
+    return () => {
+      window.removeEventListener('focus', refreshHistory);
+      window.removeEventListener('pageshow', refreshHistory);
+      document.removeEventListener('visibilitychange', refreshHistory);
+    };
   }, []);
 
   if (history.length === 0) return null;
