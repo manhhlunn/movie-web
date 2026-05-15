@@ -33,7 +33,7 @@ export default function ContinueWatching() {
   if (history.length === 0) return null;
 
   return (
-    <section className="relative py-6 md:py-8">
+    <section className="relative py-4">
       {/* Header */}
       <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 mb-4">
         <h2 className="text-xl md:text-2xl font-bold text-white flex items-center">

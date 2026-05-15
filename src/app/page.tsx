@@ -44,14 +44,14 @@ export default function Home() {
     : newlyUpdated.items.slice(0, 5);
 
   return (
-    <div className="pb-20 space-y-12">
+    <div className="pb-20 space-y-6">
       {heroMovies.length > 0 && <HeroSection movies={heroMovies} />}
 
       <div className="relative z-20">
         <ContinueWatching />
       </div>
 
-      <div className="space-y-4 relative z-10">
+      <div className="space-y-0 relative z-10">
         <MovieSlider 
           title={`Phim Bộ Hàn Quốc ${currentYear}`} 
           movies={heroData?.items || []} 

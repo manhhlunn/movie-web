@@ -16,6 +16,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const autoPlayRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const validMovies = movies?.slice(0, 5) || [];
   const movie = validMovies[activeIndex];
@@ -30,6 +31,18 @@ export default function HeroSection({ movies }: HeroSectionProps) {
       if (autoPlayRef.current) clearInterval(autoPlayRef.current);
     };
   }, [isAutoPlaying, validMovies.length, activeIndex]);
+
+  // Scroll active thumb into view
+  useEffect(() => {
+    const activeThumb = thumbRefs.current[activeIndex];
+    if (activeThumb) {
+      activeThumb.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      });
+    }
+  }, [activeIndex]);
 
   const goTo = (idx: number) => {
     setActiveIndex(idx);
@@ -167,6 +180,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             {validMovies.map((m, i) => (
               <button
                 key={m.slug}
+                ref={(el) => (thumbRefs.current[i] = el)}
                 onClick={() => goTo(i)}
                 className={cn(
                   'relative overflow-hidden rounded-lg border-2 transition-all duration-300 flex-shrink-0',
