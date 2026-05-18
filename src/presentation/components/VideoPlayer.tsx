@@ -441,8 +441,10 @@ function HLSPlayer({
       clearTimeout(controlsTimeoutRef.current);
     }
     controlsTimeoutRef.current = setTimeout(() => {
-      if (isPlaying) setShowControls(false);
-    }, 1000);
+      if (videoRef.current && !videoRef.current.paused) {
+        setShowControls(false);
+      }
+    }, 1500); // 1.5s is a better balance for mobile
   };
 
   const formatTime = (s: number) => {
