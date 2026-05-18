@@ -411,7 +411,7 @@ function HLSPlayer({
     }
     controlsTimeoutRef.current = setTimeout(() => {
       if (isPlaying) setShowControls(false);
-    }, 2000);
+    }, 1000);
   };
 
   const formatTime = (s: number) => {
@@ -427,25 +427,34 @@ function HLSPlayer({
         "relative w-full bg-black overflow-hidden group transition-all duration-300",
         isFullscreen ? "fixed inset-0 z-[9999] rounded-0" : "aspect-video rounded-xl"
       )}
-      style={isRotated && isFullscreen ? { 
-        width: windowDims.height > 0 ? `${windowDims.height}px` : '100dvh', 
-        height: windowDims.width > 0 ? `${windowDims.width}px` : '100dvw', 
-        top: '50%', 
-        left: '50%', 
-        right: 'auto',
-        bottom: 'auto',
-        transform: 'translate(-50%, -50%) rotate(90deg)' 
-      } : {}}
       onMouseMove={showControlsTemporarily}
       onMouseLeave={() => isPlaying && setShowControls(false)}
     >
-      <video
-        ref={videoRef}
-        className="w-full h-full object-contain"
-        onClick={(e) => {
-          if (showSpeedMenu) setShowSpeedMenu(false);
-          else togglePlay();
-        }}
+      <div 
+        className="relative w-full h-full flex items-center justify-center bg-black"
+        style={isRotated && isFullscreen ? { 
+          width: windowDims.height > 0 ? `${windowDims.height}px` : '100dvh', 
+          height: windowDims.width > 0 ? `${windowDims.width}px` : '100dvw', 
+          position: 'absolute',
+          top: '50%', 
+          left: '50%', 
+          transform: 'translate(-50%, -50%) rotate(90deg)' 
+        } : {}}
+      >
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full object-contain"
+          onClick={(e) => {
+            if (showSpeedMenu) {
+              setShowSpeedMenu(false);
+              return;
+            }
+            if (isPlaying && !showControls) {
+              showControlsTemporarily();
+            } else {
+              togglePlay();
+            }
+          }}
         playsInline
         poster={poster}
         onLoadedData={(e) => { e.currentTarget.playbackRate = playbackRate; }}
@@ -606,6 +615,7 @@ function HLSPlayer({
             )}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
