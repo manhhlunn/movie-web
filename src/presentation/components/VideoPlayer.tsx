@@ -404,6 +404,37 @@ function HLSPlayer({
     video.currentTime = pos * duration;
   };
 
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
+    if (showSpeedMenu) {
+      setShowSpeedMenu(false);
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+
+    if (e.detail === 1) {
+      clickTimeoutRef.current = setTimeout(() => {
+        if (isPlaying && !showControls) {
+          showControlsTemporarily();
+        } else {
+          togglePlay();
+        }
+      }, 250);
+    } else if (e.detail === 2) {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+      if (clickX > rect.width / 2) {
+        skipForward();
+      } else {
+        skipBackward();
+      }
+    }
+  };
+
   const showControlsTemporarily = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) {
@@ -444,17 +475,7 @@ function HLSPlayer({
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-contain"
-          onClick={(e) => {
-            if (showSpeedMenu) {
-              setShowSpeedMenu(false);
-              return;
-            }
-            if (isPlaying && !showControls) {
-              showControlsTemporarily();
-            } else {
-              togglePlay();
-            }
-          }}
+          onClick={handleVideoClick}
         playsInline
         poster={poster}
         onLoadedData={(e) => { e.currentTarget.playbackRate = playbackRate; }}
