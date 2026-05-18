@@ -411,7 +411,7 @@ function HLSPlayer({
     }
     controlsTimeoutRef.current = setTimeout(() => {
       if (isPlaying) setShowControls(false);
-    }, 3000);
+    }, 2000);
   };
 
   const formatTime = (s: number) => {
@@ -425,14 +425,15 @@ function HLSPlayer({
       ref={containerRef}
       className={cn(
         "relative w-full bg-black overflow-hidden group transition-all duration-300",
-        isFullscreen ? "fixed inset-0 z-[9999] rounded-0" : "aspect-video rounded-xl",
-        isRotated && isFullscreen && "!inset-auto" // disable inset-0 when rotated so top/left/width/height work properly
+        isFullscreen ? "fixed inset-0 z-[9999] rounded-0" : "aspect-video rounded-xl"
       )}
       style={isRotated && isFullscreen ? { 
         width: windowDims.height > 0 ? `${windowDims.height}px` : '100dvh', 
         height: windowDims.width > 0 ? `${windowDims.width}px` : '100dvw', 
         top: '50%', 
         left: '50%', 
+        right: 'auto',
+        bottom: 'auto',
         transform: 'translate(-50%, -50%) rotate(90deg)' 
       } : {}}
       onMouseMove={showControlsTemporarily}
@@ -462,30 +463,30 @@ function HLSPlayer({
         <div className="absolute inset-0 flex items-center justify-center gap-6 sm:gap-12 pointer-events-none z-10 transition-opacity duration-300">
           <button 
             onClick={(e) => { e.stopPropagation(); skipBackward(); }}
-            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md transition-all pointer-events-auto hover:scale-110"
+            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all pointer-events-auto hover:scale-110"
             title="Tua lại 10s"
           >
-            <Rewind className="w-5 h-5 sm:w-7 sm:h-7 fill-current" />
+            <Rewind className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
           </button>
           
           <button 
             onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-            className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600/90 hover:bg-red-600 text-white flex items-center justify-center backdrop-blur-md shadow-2xl shadow-red-600/30 transition-all pointer-events-auto hover:scale-110"
+            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-600/70 hover:bg-red-600 text-white flex items-center justify-center backdrop-blur-sm shadow-xl shadow-red-600/20 transition-all pointer-events-auto hover:scale-110"
             title={isPlaying ? "Tạm dừng" : "Phát"}
           >
             {isPlaying ? (
-              <Pause className="w-8 h-8 sm:w-10 sm:h-10 fill-current" />
+              <Pause className="w-6 h-6 sm:w-8 sm:h-8 fill-current" />
             ) : (
-              <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1" />
+              <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-current ml-1" />
             )}
           </button>
           
           <button 
             onClick={(e) => { e.stopPropagation(); skipForward(); }}
-            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md transition-all pointer-events-auto hover:scale-110"
+            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all pointer-events-auto hover:scale-110"
             title="Tua tới 10s"
           >
-            <FastForward className="w-5 h-5 sm:w-7 sm:h-7 fill-current" />
+            <FastForward className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
           </button>
         </div>
       )}
@@ -580,7 +581,7 @@ function HLSPlayer({
             {isPiPSupported && (
               <button
                 onClick={togglePiP}
-                className="text-white hover:text-red-500 transition-colors hidden sm:block"
+                className="text-white hover:text-red-500 transition-colors"
                 title="Picture in Picture"
               >
                 <PictureInPicture className="w-5 h-5" />
