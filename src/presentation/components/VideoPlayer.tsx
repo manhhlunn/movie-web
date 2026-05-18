@@ -13,6 +13,9 @@ import {
   Settings,
   Loader2,
   RotateCw,
+  Rewind,
+  FastForward,
+  PictureInPicture,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
@@ -75,6 +78,28 @@ function HLSPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [isRotated, setIsRotated] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Speed and PiP states
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [isPiPSupported, setIsPiPSupported] = useState(false);
+  
+  useEffect(() => {
+    setIsPiPSupported(typeof document !== 'undefined' && 'pictureInPictureEnabled' in document);
+  }, []);
+
+  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+  // Track window dimensions for perfect rotated fit
+  const [windowDims, setWindowDims] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const updateDims = () => setWindowDims({ width: window.innerWidth, height: window.innerHeight });
+      updateDims();
+      window.addEventListener('resize', updateDims);
+      return () => window.removeEventListener('resize', updateDims);
+    }
+  }, []);
 
   // Resume progress logic
   useEffect(() => {
@@ -284,6 +309,44 @@ function HLSPlayer({
     setIsRotated(!isRotated);
   };
 
+  const skipBackward = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Math.max(video.currentTime - 10, 0);
+    showControlsTemporarily();
+  };
+
+  const skipForward = () => {
+    const video = videoRef.current;
+    if (!video || !duration) return;
+    video.currentTime = Math.min(video.currentTime + 10, duration);
+    showControlsTemporarily();
+  };
+
+  const changeSpeed = (speed: number) => {
+    const video = videoRef.current;
+    if (video) {
+      video.playbackRate = speed;
+      setPlaybackRate(speed);
+      setShowSpeedMenu(false);
+    }
+  };
+
+  const togglePiP = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await video.requestPictureInPicture();
+      }
+    } catch (error) {
+      console.error('Failed to toggle PiP', error);
+    }
+  };
+
   const toggleFullscreen = async () => {
     const container = containerRef.current;
     const video = videoRef.current;
@@ -363,11 +426,11 @@ function HLSPlayer({
       className={cn(
         "relative w-full bg-black overflow-hidden group transition-all duration-300",
         isFullscreen ? "fixed inset-0 z-[9999] rounded-0" : "aspect-video rounded-xl",
-        isRotated && isFullscreen && "rotate-90 origin-center"
+        isRotated && isFullscreen && "!inset-auto" // disable inset-0 when rotated so top/left/width/height work properly
       )}
       style={isRotated && isFullscreen ? { 
-        width: '100vh', 
-        height: '100vw', 
+        width: windowDims.height > 0 ? `${windowDims.height}px` : '100dvh', 
+        height: windowDims.width > 0 ? `${windowDims.width}px` : '100dvw', 
         top: '50%', 
         left: '50%', 
         transform: 'translate(-50%, -50%) rotate(90deg)' 
@@ -378,9 +441,13 @@ function HLSPlayer({
       <video
         ref={videoRef}
         className="w-full h-full object-contain"
-        onClick={togglePlay}
+        onClick={(e) => {
+          if (showSpeedMenu) setShowSpeedMenu(false);
+          else togglePlay();
+        }}
         playsInline
         poster={poster}
+        onLoadedData={(e) => { e.currentTarget.playbackRate = playbackRate; }}
       />
 
       {/* Loading spinner */}
@@ -390,15 +457,36 @@ function HLSPlayer({
         </div>
       )}
 
-      {/* Center play button (when paused) */}
-      {!isPlaying && !isLoading && (
-        <div
-          className="absolute inset-0 flex items-center justify-center cursor-pointer"
-          onClick={togglePlay}
-        >
-          <div className="w-20 h-20 rounded-full bg-red-600/90 backdrop-blur-sm flex items-center justify-center shadow-2xl shadow-red-600/30 hover:scale-110 transition-transform">
-            <Play className="w-8 h-8 text-white fill-white ml-1" />
-          </div>
+      {/* Center play and skip buttons */}
+      {(showControls || !isPlaying) && !isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center gap-6 sm:gap-12 pointer-events-none z-10 transition-opacity duration-300">
+          <button 
+            onClick={(e) => { e.stopPropagation(); skipBackward(); }}
+            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md transition-all pointer-events-auto hover:scale-110"
+            title="Tua lại 10s"
+          >
+            <Rewind className="w-5 h-5 sm:w-7 sm:h-7 fill-current" />
+          </button>
+          
+          <button 
+            onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-red-600/90 hover:bg-red-600 text-white flex items-center justify-center backdrop-blur-md shadow-2xl shadow-red-600/30 transition-all pointer-events-auto hover:scale-110"
+            title={isPlaying ? "Tạm dừng" : "Phát"}
+          >
+            {isPlaying ? (
+              <Pause className="w-8 h-8 sm:w-10 sm:h-10 fill-current" />
+            ) : (
+              <Play className="w-8 h-8 sm:w-10 sm:h-10 fill-current ml-1" />
+            )}
+          </button>
+          
+          <button 
+            onClick={(e) => { e.stopPropagation(); skipForward(); }}
+            className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-md transition-all pointer-events-auto hover:scale-110"
+            title="Tua tới 10s"
+          >
+            <FastForward className="w-5 h-5 sm:w-7 sm:h-7 fill-current" />
+          </button>
         </div>
       )}
 
@@ -426,10 +514,24 @@ function HLSPlayer({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
+              onClick={skipBackward}
+              className="text-white hover:text-red-500 transition-colors"
+              title="Tua lại 10s"
+            >
+              <Rewind className="w-5 h-5 fill-current" />
+            </button>
+            <button
               onClick={togglePlay}
               className="text-white hover:text-red-500 transition-colors"
             >
-              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-white" />}
+              {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
+            </button>
+            <button
+              onClick={skipForward}
+              className="text-white hover:text-red-500 transition-colors"
+              title="Tua tới 10s"
+            >
+              <FastForward className="w-5 h-5 fill-current" />
             </button>
             <button
               onClick={toggleMute}
@@ -441,12 +543,50 @@ function HLSPlayer({
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 relative">
             {title && (
-              <span className="text-xs text-zinc-400 hidden md:block truncate max-w-[200px]">
+              <span className="text-xs text-zinc-400 hidden lg:block truncate max-w-[200px]">
                 {title}
               </span>
             )}
+
+            {/* Speed Menu */}
+            <div className="relative">
+              {showSpeedMenu && (
+                <div className="absolute bottom-full right-0 mb-4 bg-black/90 backdrop-blur-md rounded-lg p-1 min-w-[80px] flex flex-col items-center z-50">
+                  {speeds.map((s) => (
+                    <button
+                      key={s}
+                      onClick={(e) => { e.stopPropagation(); changeSpeed(s); }}
+                      className={cn(
+                        "w-full text-xs py-2 px-3 rounded hover:bg-white/20 transition-colors text-center",
+                        playbackRate === s ? "text-red-500 font-bold bg-white/10" : "text-white"
+                      )}
+                    >
+                      {s === 1 ? 'Chuẩn' : `${s}x`}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
+                className="text-white hover:text-red-500 transition-colors text-xs font-semibold h-8 w-8 flex items-center justify-center rounded hover:bg-white/10"
+                title="Tốc độ phát"
+              >
+                {playbackRate}x
+              </button>
+            </div>
+
+            {isPiPSupported && (
+              <button
+                onClick={togglePiP}
+                className="text-white hover:text-red-500 transition-colors hidden sm:block"
+                title="Picture in Picture"
+              >
+                <PictureInPicture className="w-5 h-5" />
+              </button>
+            )}
+
             <button
               onClick={toggleFullscreen}
               className="text-white hover:text-red-500 transition-colors"

@@ -3,7 +3,6 @@
 import { useState, useRef, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Clock, Film, Star } from 'lucide-react';
 import { Movie } from '@/domain/entities/Movie';
 import { cn } from '@/lib/utils';
@@ -86,12 +85,8 @@ const MovieCard = memo(({ movie: listMovie, index = 0, className }: MovieCardPro
 
   return (
     <>
-      <motion.div
+      <div
         ref={cardRef}
-        initial={{ opacity: 0, y: 10 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "100px" }}
-        transition={{ duration: 0.3, delay: Math.min((index % 8) * 0.05, 0.3) }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         className={cn(
@@ -139,11 +134,9 @@ const MovieCard = memo(({ movie: listMovie, index = 0, className }: MovieCardPro
             {/* Always-visible title with blur backdrop */}
             <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black via-black/80 to-transparent z-10" />
             <div className="absolute inset-x-0 bottom-0 px-2.5 pb-2.5 z-20">
-              <div className="backdrop-blur-[2px]">
-                <h3 className="text-[13px] sm:text-[15px] font-bold text-white leading-snug line-clamp-2 drop-shadow-lg">
-                  {movie.name}
-                </h3>
-              </div>
+              <h3 className="text-[13px] sm:text-[15px] font-bold text-white leading-snug line-clamp-2 drop-shadow-lg">
+                {movie.name}
+              </h3>
             </div>
 
             {/* Hover info overlay */}
@@ -209,11 +202,10 @@ const MovieCard = memo(({ movie: listMovie, index = 0, className }: MovieCardPro
 
           </div>
         </Link>
-      </motion.div>
+      </div>
 
-      <AnimatePresence>
-        {showPopup && cardRect && (
-          <MoviePreviewPopup 
+      {showPopup && cardRect && (
+        <MoviePreviewPopup 
             movie={movie} 
             rect={cardRect} 
             onClose={() => setShowPopup(false)}
@@ -221,7 +213,6 @@ const MovieCard = memo(({ movie: listMovie, index = 0, className }: MovieCardPro
             onMouseLeave={() => { isMouseInPopup.current = false; }}
           />
         )}
-      </AnimatePresence>
     </>
   );
 });

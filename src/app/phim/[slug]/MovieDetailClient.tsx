@@ -2,7 +2,6 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import { Play, Calendar, Clock, Star, Film, Hash, Users, Image as ImageIcon } from 'lucide-react';
 import { useMovieDetails, useMoviePeoples, useMovieImages, useMovieKeywords, useMovieAIAnalysis } from '@/presentation/hooks/useMovies';
 import EpisodeList from '@/presentation/components/EpisodeList';
@@ -128,10 +127,8 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
       <div className="container relative z-10 -mt-32 md:-mt-48">
         <div className="flex flex-col md:flex-row gap-8 md:gap-12">
           {/* Poster */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="shrink-0 w-48 md:w-72 mx-auto md:mx-0 rounded-xl overflow-hidden shadow-2xl border border-zinc-800 h-fit"
+          <div 
+            className="shrink-0 w-48 md:w-72 mx-auto md:mx-0 rounded-xl overflow-hidden shadow-2xl border border-zinc-800 h-fit animate-in fade-in slide-in-from-bottom-4 duration-500"
           >
             <div className="relative w-full">
               <Image
@@ -144,14 +141,11 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                 unoptimized
               />
             </div>
-          </motion.div>
+          </div>
 
           {/* Info */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="flex-1 space-y-6 pt-4 md:pt-10"
+          <div 
+            className="flex-1 space-y-6 pt-4 md:pt-10 animate-in fade-in slide-in-from-bottom-4 duration-700"
           >
             <div>
               <h1 className="text-4xl md:text-5xl font-bold font-outfit text-white mb-2">
@@ -251,14 +245,12 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
 
             {/* AI Analysis Section */}
             {(isAiLoading || aiAnalysis || isAiError) && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/60 backdrop-blur-xl p-6 md:p-10 mb-12 group shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+              <div 
+                className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 p-6 md:p-10 mb-12 group shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-700"
               >
-                {/* Modern Gemini Glow Background */}
-                <div className="absolute -top-32 -left-32 w-80 h-80 bg-blue-600/10 blur-[120px] rounded-full animate-pulse" />
-                <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-indigo-600/10 blur-[120px] rounded-full" />
+                {/* Modern Gemini Glow Background (Removed pulse and reduced blur for perf) */}
+                <div className="absolute -top-32 -left-32 w-80 h-80 bg-blue-600/10 blur-[80px] rounded-full" />
+                <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-indigo-600/10 blur-[80px] rounded-full" />
                 
                 <div className="flex items-center justify-between mb-10 pb-8 border-b border-white/5">
                   <div className="flex items-center gap-5">
@@ -359,7 +351,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                     </div>
                   </div>
                 ) : null}
-              </motion.div>
+              </div>
             )}
 
             <div className="prose prose-invert max-w-none pt-4">
@@ -383,6 +375,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                     className="absolute inset-0 w-full h-full"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
+                    loading="lazy"
                     title={`${movie.name} trailer`}
                   />
                 </div>
@@ -423,7 +416,7 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
                 </div>
               )}
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Extra Details */}
