@@ -78,6 +78,9 @@ function HLSPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [isRotated, setIsRotated] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
 
   // Speed and PiP states
   const [playbackRate, setPlaybackRate] = useState(1);
@@ -187,7 +190,9 @@ function HLSPlayer({
 
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
-      setProgress(video.duration ? (video.currentTime / video.duration) * 100 : 0);
+      if (!isDraggingRef.current) {
+        setProgress(video.duration ? (video.currentTime / video.duration) * 100 : 0);
+      }
     };
     const onDurationChange = () => setDuration(video.duration || 0);
     const onWaiting = () => setIsLoading(true);
@@ -396,12 +401,43 @@ function HLSPlayer({
     }
   };
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const video = videoRef.current;
-    if (!video || !duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pos = (e.clientX - rect.left) / rect.width;
-    video.currentTime = pos * duration;
+  const calculateProgress = (clientX: number, clientY: number) => {
+    if (!progressBarRef.current) return 0;
+    const rect = progressBarRef.current.getBoundingClientRect();
+    let pos = 0;
+    
+    if (isRotated && isFullscreen) {
+       // When rotated 90deg, the progress bar runs along the Y axis of the screen
+       pos = (clientY - rect.top) / rect.height;
+    } else {
+       pos = (clientX - rect.left) / rect.width;
+    }
+    return Math.max(0, Math.min(1, pos));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    isDraggingRef.current = true;
+    const pos = calculateProgress(e.clientX, e.clientY);
+    setProgress(pos * 100);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingRef.current) {
+      const pos = calculateProgress(e.clientX, e.clientY);
+      setProgress(pos * 100);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      const pos = calculateProgress(e.clientX, e.clientY);
+      if (videoRef.current && duration) {
+        videoRef.current.currentTime = pos * duration;
+      }
+    }
   };
 
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -448,8 +484,13 @@ function HLSPlayer({
   };
 
   const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
     const sec = Math.floor(s % 60);
+    
+    if (duration >= 3600 || h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    }
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
@@ -532,8 +573,11 @@ function HLSPlayer({
       >
         {/* Progress bar */}
         <div
-          className="w-full h-1.5 bg-zinc-700 rounded-full cursor-pointer mb-3 group/progress hover:h-2.5 transition-all"
-          onClick={handleSeek}
+          ref={progressBarRef}
+          className="w-full h-1.5 bg-zinc-700 rounded-full cursor-pointer mb-3 group/progress hover:h-2.5 transition-all touch-none"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
         >
           <div
             className="h-full bg-red-600 rounded-full relative transition-all"
