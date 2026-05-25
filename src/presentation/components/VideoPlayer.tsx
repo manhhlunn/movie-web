@@ -590,6 +590,49 @@ function HLSPlayer({
           transform: 'translate(-50%, -50%) rotate(90deg)' 
         } : {}}
       >
+        {/* Top Controls */}
+        <div
+          className={cn(
+            "absolute top-0 left-0 right-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pb-16 pt-4 px-4 transition-opacity duration-300 flex items-center justify-end z-20 gap-3",
+            showControls || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+          )}
+        >
+          {/* Speed Menu */}
+          <div className="relative">
+            {showSpeedMenu && (
+              <div className="absolute top-full right-0 mt-2 bg-black/90 backdrop-blur-md rounded-lg p-1 min-w-[80px] flex flex-col items-center z-50 shadow-xl border border-zinc-800">
+                {speeds.map((s) => (
+                  <button
+                    key={s}
+                    onClick={(e) => { e.stopPropagation(); changeSpeed(s); }}
+                    className={cn(
+                      "w-full text-xs py-2 px-3 rounded hover:bg-white/20 transition-colors text-center",
+                      playbackRate === s ? "text-red-500 font-bold bg-white/10" : "text-white"
+                    )}
+                  >
+                    {s === 1 ? 'Chuẩn' : `${s}x`}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
+              className="text-white hover:text-red-500 transition-colors text-xs font-semibold h-8 w-8 flex items-center justify-center rounded hover:bg-white/10"
+              title="Tốc độ phát"
+            >
+              {playbackRate}x
+            </button>
+          </div>
+
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowSettingsModal(true); }}
+            className="text-white hover:text-red-500 transition-colors h-8 w-8 flex items-center justify-center rounded hover:bg-white/10"
+            title="Cài đặt Intro/Outro"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+        </div>
+
         <video
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-contain"
@@ -770,24 +813,10 @@ function HLSPlayer({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={skipBackward}
-              className="text-white hover:text-red-500 transition-colors"
-              title={`Tua lại ${playerSettings.skipDuration}s`}
-            >
-              <Rewind className="w-5 h-5 fill-current" />
-            </button>
-            <button
               onClick={togglePlay}
               className="text-white hover:text-red-500 transition-colors"
             >
               {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
-            </button>
-            <button
-              onClick={skipForward}
-              className="text-white hover:text-red-500 transition-colors"
-              title={`Tua tới ${playerSettings.skipDuration}s`}
-            >
-              <FastForward className="w-5 h-5 fill-current" />
             </button>
             <button
               onClick={toggleMute}
@@ -806,33 +835,6 @@ function HLSPlayer({
               </span>
             )}
 
-            {/* Speed Menu */}
-            <div className="relative">
-              {showSpeedMenu && (
-                <div className="absolute bottom-full right-0 mb-4 bg-black/90 backdrop-blur-md rounded-lg p-1 min-w-[80px] flex flex-col items-center z-50">
-                  {speeds.map((s) => (
-                    <button
-                      key={s}
-                      onClick={(e) => { e.stopPropagation(); changeSpeed(s); }}
-                      className={cn(
-                        "w-full text-xs py-2 px-3 rounded hover:bg-white/20 transition-colors text-center",
-                        playbackRate === s ? "text-red-500 font-bold bg-white/10" : "text-white"
-                      )}
-                    >
-                      {s === 1 ? 'Chuẩn' : `${s}x`}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
-                className="text-white hover:text-red-500 transition-colors text-xs font-semibold h-8 w-8 flex items-center justify-center rounded hover:bg-white/10"
-                title="Tốc độ phát"
-              >
-                {playbackRate}x
-              </button>
-            </div>
-
             {isPiPSupported && (
               <button
                 onClick={togglePiP}
@@ -842,14 +844,6 @@ function HLSPlayer({
                 <PictureInPicture className="w-5 h-5" />
               </button>
             )}
-
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowSettingsModal(true); }}
-              className="text-white hover:text-red-500 transition-colors"
-              title="Cài đặt Intro/Outro"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
 
             <button
               onClick={toggleFullscreen}
