@@ -711,10 +711,13 @@ function HLSPlayer({
 
       {/* Center play and skip buttons */}
       {(showControls || !isPlaying) && !isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center gap-6 sm:gap-12 pointer-events-none z-10 transition-opacity duration-300">
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center gap-6 sm:gap-12 z-30 transition-opacity duration-300 pointer-events-auto"
+        >
           <button 
             onClick={(e) => { e.stopPropagation(); skipBackward(); }}
-            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all pointer-events-auto hover:scale-110"
+            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all hover:scale-110"
             title={`Tua lại ${playerSettings.skipDuration}s`}
           >
             <Rewind className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
@@ -722,7 +725,7 @@ function HLSPlayer({
           
           <button 
             onClick={(e) => { e.stopPropagation(); togglePlay(); }}
-            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-600/70 hover:bg-red-600 text-white flex items-center justify-center backdrop-blur-sm shadow-xl shadow-red-600/20 transition-all pointer-events-auto hover:scale-110"
+            className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-red-600/70 hover:bg-red-600 text-white flex items-center justify-center backdrop-blur-sm shadow-xl shadow-red-600/20 transition-all hover:scale-110"
             title={isPlaying ? "Tạm dừng" : "Phát"}
           >
             {isPlaying ? (
@@ -734,7 +737,7 @@ function HLSPlayer({
           
           <button 
             onClick={(e) => { e.stopPropagation(); skipForward(); }}
-            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all pointer-events-auto hover:scale-110"
+            className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all hover:scale-110"
             title={`Tua tới ${playerSettings.skipDuration}s`}
           >
             <FastForward className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
