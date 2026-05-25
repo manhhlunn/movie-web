@@ -43,11 +43,16 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
 
   // Find the active episode name for display
   let episodeName = episode;
+  let nextEpisodeSlug: string | undefined;
+
   if (movie.servers) {
     for (const server of movie.servers) {
-      const ep = server.episodes.find((e) => e.slug === episode);
-      if (ep) {
-        episodeName = ep.name;
+      const epIndex = server.episodes.findIndex((e) => e.slug === episode);
+      if (epIndex !== -1) {
+        episodeName = server.episodes[epIndex].name;
+        if (epIndex < server.episodes.length - 1) {
+          nextEpisodeSlug = server.episodes[epIndex + 1].slug;
+        }
         break;
       }
     }
@@ -91,6 +96,7 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
             movieSlug={slug}
             episodeSlug={episode}
             movie={movie}
+            nextEpisodeUrl={nextEpisodeSlug ? `/xem-phim/${slug}/${nextEpisodeSlug}` : undefined}
           />
         )}
       </div>

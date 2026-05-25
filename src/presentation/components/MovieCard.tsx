@@ -37,6 +37,8 @@ const MovieCard = memo(({ movie: listMovie, index = 0, className }: MovieCardPro
   });
 
   const movie = fullMovie || listMovie;
+  const movieRef = useRef(movie);
+  movieRef.current = movie;
   const imageSrc = movie.thumbUrl || movie.posterUrl;
 
   const isMouseInPopup = useRef(false);
@@ -49,17 +51,16 @@ const MovieCard = memo(({ movie: listMovie, index = 0, className }: MovieCardPro
       setShouldFetchDetails(true);
     }, 200);
 
-    // Start the 2s preview timer
+    // Start the 1.5s preview timer
     timerRef.current = setTimeout(() => {
-      // Re-evaluate 'movie' here because fullMovie might have loaded
       if (cardRef.current && window.innerWidth >= 768) {
-        // If we still don't have the full movie, or it has no trailer, don't show
-        if (movie.trailerUrl) {
+        // Use ref to get the latest movie data (avoids stale closure)
+        if (movieRef.current.trailerUrl) {
           setCardRect(cardRef.current.getBoundingClientRect());
           setShowPopup(true);
         }
       }
-    }, 2000);
+    }, 1500);
   };
 
   const handleMouseLeave = () => {

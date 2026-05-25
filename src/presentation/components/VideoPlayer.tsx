@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
+import { useRouter } from 'next/navigation';
 
 const ReactPlayer = dynamic(() => import('react-player'), { ssr: false });
 
@@ -30,12 +31,13 @@ interface VideoPlayerProps {
   movieSlug?: string;
   episodeSlug?: string;
   movie?: any;
+  nextEpisodeUrl?: string;
 }
 
-export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug, movie }: VideoPlayerProps) {
+export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug, movie, nextEpisodeUrl }: VideoPlayerProps) {
   // If we have an m3u8 link, use custom HLS player. Otherwise fall back to iframe.
   if (linkM3u8) {
-    return <HLSPlayer url={linkM3u8} title={title} poster={poster} movieSlug={movieSlug} episodeSlug={episodeSlug} movie={movie} />;
+    return <HLSPlayer url={linkM3u8} title={title} poster={poster} movieSlug={movieSlug} episodeSlug={episodeSlug} movie={movie} nextEpisodeUrl={nextEpisodeUrl} />;
   }
 
   if (linkEmbed) {
@@ -57,7 +59,8 @@ function HLSPlayer({
   poster, 
   movieSlug, 
   episodeSlug,
-  movie
+  movie,
+  nextEpisodeUrl
 }: { 
   url: string; 
   title?: string; 
@@ -65,7 +68,9 @@ function HLSPlayer({
   movieSlug?: string;
   episodeSlug?: string;
   movie?: any;
+  nextEpisodeUrl?: string;
 }) {
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -82,14 +87,53 @@ function HLSPlayer({
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
+  const [hoverPos, setHoverPos] = useState<number | null>(null);
+  const [hoverTime, setHoverTime] = useState<number>(0);
+
   // Speed and PiP states
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [isPiPSupported, setIsPiPSupported] = useState(false);
   
+  // Custom intro/outro settings per movie
+  const [movieSettings, setMovieSettings] = useState({ introDuration: 45, outroDuration: 120 });
+  const [playerSettings, setPlayerSettings] = useState({ skipDuration: 10 });
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
   useEffect(() => {
     setIsPiPSupported(typeof document !== 'undefined' && 'pictureInPictureEnabled' in document);
   }, []);
+
+  // Load custom settings
+  useEffect(() => {
+    if (movieSlug) {
+      const saved = localStorage.getItem(`movie-settings-${movieSlug}`);
+      if (saved) {
+        try {
+          setMovieSettings(JSON.parse(saved));
+        } catch(e) {}
+      }
+    }
+    
+    const savedPlayer = localStorage.getItem('player-settings');
+    if (savedPlayer) {
+      try {
+        setPlayerSettings(JSON.parse(savedPlayer));
+      } catch(e) {}
+    }
+  }, [movieSlug]);
+
+  const saveSettings = (newMovieSettings: { introDuration: number, outroDuration: number }, newPlayerSettings: { skipDuration: number }) => {
+    setMovieSettings(newMovieSettings);
+    if (movieSlug) {
+      localStorage.setItem(`movie-settings-${movieSlug}`, JSON.stringify(newMovieSettings));
+    }
+    
+    setPlayerSettings(newPlayerSettings);
+    localStorage.setItem('player-settings', JSON.stringify(newPlayerSettings));
+    
+    setShowSettingsModal(false);
+  };
 
   const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -252,12 +296,12 @@ function HLSPlayer({
       switch (e.key) {
         case 'ArrowRight':
           e.preventDefault();
-          video.currentTime = Math.min(video.currentTime + 10, video.duration);
+          video.currentTime = Math.min(video.currentTime + playerSettings.skipDuration, video.duration);
           showControlsTemporarily();
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          video.currentTime = Math.max(video.currentTime - 10, 0);
+          video.currentTime = Math.max(video.currentTime - playerSettings.skipDuration, 0);
           showControlsTemporarily();
           break;
         case ' ':
@@ -317,14 +361,14 @@ function HLSPlayer({
   const skipBackward = () => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(video.currentTime - 10, 0);
+    video.currentTime = Math.max(video.currentTime - playerSettings.skipDuration, 0);
     showControlsTemporarily();
   };
 
   const skipForward = () => {
     const video = videoRef.current;
     if (!video || !duration) return;
-    video.currentTime = Math.min(video.currentTime + 10, duration);
+    video.currentTime = Math.min(video.currentTime + playerSettings.skipDuration, duration);
     showControlsTemporarily();
   };
 
@@ -420,12 +464,23 @@ function HLSPlayer({
     isDraggingRef.current = true;
     const pos = calculateProgress(e.clientX, e.clientY);
     setProgress(pos * 100);
+    setHoverPos(pos);
+    setHoverTime(pos * duration);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pos = calculateProgress(e.clientX, e.clientY);
+    setHoverPos(pos);
+    setHoverTime(pos * duration);
+    
     if (isDraggingRef.current) {
-      const pos = calculateProgress(e.clientX, e.clientY);
       setProgress(pos * 100);
+    }
+  };
+
+  const handlePointerLeave = () => {
+    if (!isDraggingRef.current) {
+      setHoverPos(null);
     }
   };
 
@@ -437,6 +492,7 @@ function HLSPlayer({
       if (videoRef.current && duration) {
         videoRef.current.currentTime = pos * duration;
       }
+      setHoverPos(null);
     }
   };
 
@@ -494,6 +550,25 @@ function HLSPlayer({
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
+  const introLen = movieSettings.introDuration;
+  const outroLen = movieSettings.outroDuration;
+
+  const showSkipIntro = currentTime > 0 && currentTime < introLen;
+  const showNextEpisode = duration > 0 && (duration - currentTime < outroLen);
+
+  const handleSkipIntro = () => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = introLen; // Skip to configured intro end
+      showControlsTemporarily();
+    }
+  };
+
+  const handleNextEpisode = () => {
+    if (nextEpisodeUrl) {
+      router.push(nextEpisodeUrl);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -531,13 +606,73 @@ function HLSPlayer({
         </div>
       )}
 
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-80 max-w-full shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-4">Cài đặt Intro / Outro</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-zinc-400 mb-1">Thời điểm kết thúc Intro (giây)</label>
+              <input 
+                type="number" 
+                value={movieSettings.introDuration} 
+                onChange={e => setMovieSettings(s => ({ ...s, introDuration: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-white outline-none focus:border-red-500"
+                min="0"
+              />
+              <p className="text-xs text-zinc-500 mt-1">Nút Bỏ qua Intro sẽ tua đến số giây này.</p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm text-zinc-400 mb-1">Thời lượng Outro (giây)</label>
+              <input 
+                type="number" 
+                value={movieSettings.outroDuration} 
+                onChange={e => setMovieSettings(s => ({ ...s, outroDuration: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-white outline-none focus:border-red-500"
+                min="0"
+              />
+              <p className="text-xs text-zinc-500 mt-1">Nút Tập tiếp theo sẽ hiện khi phim còn lại chừng này giây.</p>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm text-zinc-400 mb-1">Thời gian Tua tới/lui (giây)</label>
+              <input 
+                type="number" 
+                value={playerSettings.skipDuration} 
+                onChange={e => setPlayerSettings(s => ({ ...s, skipDuration: Number(e.target.value) }))}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-white outline-none focus:border-red-500"
+                min="5"
+                step="5"
+              />
+              <p className="text-xs text-zinc-500 mt-1">Sử dụng khi nhấp đúp hoặc bấm nút tua.</p>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setShowSettingsModal(false); }} 
+                className="px-4 py-2 rounded text-zinc-300 hover:text-white transition-colors"
+              >Hủy</button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); saveSettings(movieSettings, playerSettings); }} 
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded font-medium transition-colors"
+              >Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Center play and skip buttons */}
       {(showControls || !isPlaying) && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center gap-6 sm:gap-12 pointer-events-none z-10 transition-opacity duration-300">
           <button 
             onClick={(e) => { e.stopPropagation(); skipBackward(); }}
             className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all pointer-events-auto hover:scale-110"
-            title="Tua lại 10s"
+            title={`Tua lại ${playerSettings.skipDuration}s`}
           >
             <Rewind className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
           </button>
@@ -557,12 +692,37 @@ function HLSPlayer({
           <button 
             onClick={(e) => { e.stopPropagation(); skipForward(); }}
             className="w-10 h-10 sm:w-14 sm:h-14 rounded-full bg-black/30 hover:bg-black/60 text-white flex items-center justify-center backdrop-blur-sm transition-all pointer-events-auto hover:scale-110"
-            title="Tua tới 10s"
+            title={`Tua tới ${playerSettings.skipDuration}s`}
           >
             <FastForward className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
           </button>
         </div>
       )}
+
+      {/* Smart Action Buttons (Skip Intro & Next Episode) */}
+      <div className="absolute bottom-24 right-4 sm:right-6 flex flex-col gap-3 items-end z-20 pointer-events-none">
+        {showSkipIntro && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleSkipIntro(); }}
+            className={cn(
+              "bg-black/60 hover:bg-white hover:text-black text-white px-4 py-2 rounded font-semibold backdrop-blur-md transition-all border border-zinc-700 hover:border-white pointer-events-auto",
+              showControls ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
+            )}
+          >
+            Bỏ qua Intro
+          </button>
+        )}
+        
+        {showNextEpisode && nextEpisodeUrl && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleNextEpisode(); }}
+            className="bg-red-600 hover:bg-red-500 text-white px-5 py-3 rounded font-bold shadow-2xl transition-all pointer-events-auto flex items-center gap-2 hover:scale-105 animate-in fade-in slide-in-from-right-4 duration-500"
+          >
+            Tập tiếp theo
+            <FastForward className="w-5 h-5 fill-current" />
+          </button>
+        )}
+      </div>
 
       {/* Controls bar */}
       <div
@@ -572,18 +732,37 @@ function HLSPlayer({
         )}
       >
         {/* Progress bar */}
-        <div
-          ref={progressBarRef}
-          className="w-full h-1.5 bg-zinc-700 rounded-full cursor-pointer mb-3 group/progress hover:h-2.5 transition-all touch-none"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-        >
-          <div
-            className="h-full bg-red-600 rounded-full relative transition-all"
-            style={{ width: `${progress}%` }}
+        <div className="relative w-full">
+          {/* Preview Box */}
+          <div 
+            className={cn(
+              "absolute bottom-full mb-4 transform -translate-x-1/2 flex flex-col items-center pointer-events-none transition-opacity duration-200",
+              hoverPos !== null && duration > 0 ? "opacity-100" : "opacity-0"
+            )}
+            style={{ left: `${(hoverPos || 0) * 100}%` }}
           >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-red-500 rounded-full shadow-lg opacity-0 group-hover/progress:opacity-100 transition-opacity" />
+            <div className="w-48 sm:w-64 md:w-80 aspect-video bg-black rounded-lg border-2 border-zinc-500 overflow-hidden shadow-2xl relative mb-1">
+              <VideoPreview url={url} time={hoverTime} />
+            </div>
+            <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-mono shadow">
+              {formatTime(hoverTime)}
+            </div>
+          </div>
+
+          <div
+            ref={progressBarRef}
+            className="w-full h-1.5 bg-zinc-700 rounded-full cursor-pointer mb-3 group/progress hover:h-2.5 transition-all touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
+          >
+            <div
+              className="h-full bg-red-600 rounded-full relative transition-all"
+              style={{ width: `${progress}%` }}
+            >
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-red-500 rounded-full shadow-lg opacity-0 group-hover/progress:opacity-100 transition-opacity" />
+            </div>
           </div>
         </div>
 
@@ -593,7 +772,7 @@ function HLSPlayer({
             <button
               onClick={skipBackward}
               className="text-white hover:text-red-500 transition-colors"
-              title="Tua lại 10s"
+              title={`Tua lại ${playerSettings.skipDuration}s`}
             >
               <Rewind className="w-5 h-5 fill-current" />
             </button>
@@ -606,7 +785,7 @@ function HLSPlayer({
             <button
               onClick={skipForward}
               className="text-white hover:text-red-500 transition-colors"
-              title="Tua tới 10s"
+              title={`Tua tới ${playerSettings.skipDuration}s`}
             >
               <FastForward className="w-5 h-5 fill-current" />
             </button>
@@ -665,6 +844,14 @@ function HLSPlayer({
             )}
 
             <button
+              onClick={(e) => { e.stopPropagation(); setShowSettingsModal(true); }}
+              className="text-white hover:text-red-500 transition-colors"
+              title="Cài đặt Intro/Outro"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+
+            <button
               onClick={toggleFullscreen}
               className="text-white hover:text-red-500 transition-colors"
               title="Toàn màn hình"
@@ -686,6 +873,42 @@ function HLSPlayer({
       </div>
     </div>
   );
+}
+
+// ─── Video Preview ───────────────────────────────────────────
+
+function VideoPreview({ url, time }: { url: string; time: number }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    let hls: Hls | null = null;
+    if (Hls.isSupported()) {
+      hls = new Hls({
+        maxBufferLength: 2,
+        maxMaxBufferLength: 4,
+        enableWorker: true,
+      });
+      hls.loadSource(url);
+      hls.attachMedia(video);
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = url;
+    }
+
+    return () => {
+      hls?.destroy();
+    };
+  }, [url]);
+
+  useEffect(() => {
+    if (videoRef.current && Math.abs(videoRef.current.currentTime - time) > 1) {
+      videoRef.current.currentTime = time;
+    }
+  }, [time]);
+
+  return <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />;
 }
 
 // ─── Iframe Player ───────────────────────────────────────────
