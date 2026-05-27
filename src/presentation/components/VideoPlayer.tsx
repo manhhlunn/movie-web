@@ -655,54 +655,56 @@ function HLSPlayer({
           className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-80 max-w-full shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-4">Cài đặt Intro / Outro</h3>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 sm:p-6 w-80 max-w-[90%] max-h-[90%] shadow-2xl flex flex-col">
+            <h3 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4 flex-shrink-0">Cài đặt Intro / Outro</h3>
             
-            <div className="mb-4">
-              <label className="block text-sm text-zinc-400 mb-1">Thời điểm kết thúc Intro (giây)</label>
-              <input 
-                type="number" 
-                value={movieSettings.introDuration} 
-                onChange={e => setMovieSettings(s => ({ ...s, introDuration: Number(e.target.value) }))}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-white outline-none focus:border-red-500"
-                min="0"
-              />
-              <p className="text-xs text-zinc-500 mt-1">Nút Bỏ qua Intro sẽ tua đến số giây này.</p>
+            <div className="flex-1 overflow-y-auto pr-1 min-h-0 space-y-3 sm:space-y-4 mb-4">
+              <div>
+                <label className="block text-xs sm:text-sm text-zinc-400 mb-1">Thời điểm kết thúc Intro (giây)</label>
+                <input 
+                  type="number" 
+                  value={movieSettings.introDuration} 
+                  onChange={e => setMovieSettings(s => ({ ...s, introDuration: Number(e.target.value) }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 sm:py-2 text-sm text-white outline-none focus:border-red-500"
+                  min="0"
+                />
+                <p className="text-[10px] sm:text-xs text-zinc-500 mt-1">Nút Bỏ qua Intro sẽ tua đến số giây này.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs sm:text-sm text-zinc-400 mb-1">Thời lượng Outro (giây)</label>
+                <input 
+                  type="number" 
+                  value={movieSettings.outroDuration} 
+                  onChange={e => setMovieSettings(s => ({ ...s, outroDuration: Number(e.target.value) }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 sm:py-2 text-sm text-white outline-none focus:border-red-500"
+                  min="0"
+                />
+                <p className="text-[10px] sm:text-xs text-zinc-500 mt-1">Nút Tập tiếp theo sẽ hiện khi phim còn lại chừng này giây.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs sm:text-sm text-zinc-400 mb-1">Thời gian Tua tới/lui (giây)</label>
+                <input 
+                  type="number" 
+                  value={playerSettings.skipDuration} 
+                  onChange={e => setPlayerSettings(s => ({ ...s, skipDuration: Number(e.target.value) }))}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 sm:py-2 text-sm text-white outline-none focus:border-red-500"
+                  min="5"
+                  step="5"
+                />
+                <p className="text-[10px] sm:text-xs text-zinc-500 mt-1">Sử dụng khi nhấp đúp hoặc bấm nút tua.</p>
+              </div>
             </div>
 
-            <div className="mb-4">
-              <label className="block text-sm text-zinc-400 mb-1">Thời lượng Outro (giây)</label>
-              <input 
-                type="number" 
-                value={movieSettings.outroDuration} 
-                onChange={e => setMovieSettings(s => ({ ...s, outroDuration: Number(e.target.value) }))}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-white outline-none focus:border-red-500"
-                min="0"
-              />
-              <p className="text-xs text-zinc-500 mt-1">Nút Tập tiếp theo sẽ hiện khi phim còn lại chừng này giây.</p>
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-sm text-zinc-400 mb-1">Thời gian Tua tới/lui (giây)</label>
-              <input 
-                type="number" 
-                value={playerSettings.skipDuration} 
-                onChange={e => setPlayerSettings(s => ({ ...s, skipDuration: Number(e.target.value) }))}
-                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-white outline-none focus:border-red-500"
-                min="5"
-                step="5"
-              />
-              <p className="text-xs text-zinc-500 mt-1">Sử dụng khi nhấp đúp hoặc bấm nút tua.</p>
-            </div>
-
-            <div className="flex gap-3 justify-end">
+            <div className="flex gap-3 justify-end flex-shrink-0 border-t border-zinc-800 pt-3">
               <button 
                 onClick={(e) => { e.stopPropagation(); setShowSettingsModal(false); }} 
-                className="px-4 py-2 rounded text-zinc-300 hover:text-white transition-colors"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm rounded text-zinc-300 hover:text-white transition-colors"
               >Hủy</button>
               <button 
                 onClick={(e) => { e.stopPropagation(); saveSettings(movieSettings, playerSettings); }} 
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded font-medium transition-colors"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded font-medium transition-colors"
               >Lưu</button>
             </div>
           </div>
