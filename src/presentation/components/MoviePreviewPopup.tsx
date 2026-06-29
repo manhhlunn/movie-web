@@ -48,8 +48,8 @@ export default function MoviePreviewPopup({ movie, rect, onClose, onMouseEnter, 
 
   if (!mounted) return null;
 
-  // Calculate position: much larger for the popup (3x)
-  const width = rect.width * 3;
+  // Calculate position: slightly larger for the popup (1.35x)
+  const width = rect.width * 1.35;
   
   let left = rect.left - (width - rect.width) / 2;
   let top = rect.top - 50; // Offset slightly upwards from the card center

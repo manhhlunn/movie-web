@@ -2,8 +2,9 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play, Calendar, Clock, Star, Film, Hash, Users, Image as ImageIcon } from 'lucide-react';
-import { useMovieDetails, useMoviePeoples, useMovieImages, useMovieKeywords, useMovieAIAnalysis } from '@/presentation/hooks/useMovies';
+import { Play, Calendar, Clock, Star, Film, Users } from 'lucide-react';
+import { useMovieDetails, useMoviePeoples, useMovieAIAnalysis } from '@/presentation/hooks/useMovies';
+import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { cn } from '@/lib/utils';
@@ -39,11 +40,9 @@ const GeminiIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export default function MovieDetailClient({ slug }: { slug: string }) {
-  const { data: movie, isLoading, isError } = useMovieDetails(slug);
+export default function MovieDetailClient({ slug, initialMovie }: { slug: string; initialMovie?: Movie | null }) {
+  const { data: movie, isLoading, isError } = useMovieDetails(slug, { initialData: initialMovie });
   const { data: peoples } = useMoviePeoples(slug, movie?.tmdb);
-  const { data: images } = useMovieImages(slug, movie?.tmdb);
-  const { data: keywords } = useMovieKeywords(slug, movie?.tmdb);
   const { data: aiAnalysis, isLoading: isAiLoading, isError: isAiError, error: aiError, refetch: generateAI } = useMovieAIAnalysis(movie);
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -419,75 +418,43 @@ export default function MovieDetailClient({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Extra Details */}
-        <div className="mt-16 space-y-12">
-          {/* Keywords */}
-          {keywords && keywords.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Hash className="w-5 h-5 text-zinc-500" />
-              {keywords.map((kw: any) => (
-                <span key={kw._id || kw.name} className="px-3 py-1 bg-zinc-800/50 hover:bg-zinc-700 transition-colors rounded-full text-sm text-zinc-300 border border-zinc-700/50 cursor-pointer">
-                  {kw.name}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Actors */}
-          {peoples && peoples.length > 0 && (
-            <div>
-              <h3 className="text-xl font-bold font-outfit mb-6 flex items-center gap-2">
-                <Users className="w-6 h-6 text-red-500" />
-                Dàn Diễn Viên
-              </h3>
-              <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
-                {peoples.map((person: any, i: number) => (
-                  <div key={i} className="flex flex-col items-center text-center min-w-[100px] group">
-                    <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden mb-3 border-2 border-zinc-800 group-hover:border-red-500 transition-colors shadow-xl bg-zinc-900">
-                      {person.image ? (
-                        <Image src={person.image} alt={person.name} fill className="object-cover" unoptimized />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-zinc-600 bg-zinc-800">
-                          {person.name.charAt(0)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-bold text-white line-clamp-1 px-1">{person.name}</span>
-                      {person.originalName && (
-                        <span className="text-[10px] text-zinc-400 line-clamp-1 italic px-1">({person.originalName})</span>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-zinc-500 mt-1 line-clamp-1 px-1">{person.role || 'Diễn viên'}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Images Gallery */}
-          {images && images.length > 0 && (
-            <div>
-              <h3 className="text-xl font-bold font-outfit mb-6 flex items-center gap-2">
-                <ImageIcon className="w-6 h-6 text-red-500" />
-                Hình Ảnh ({images.length})
-              </h3>
-              <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
-                {images.map((img: any, i: number) => (
-                  <div key={i} className="relative w-64 md:w-80 aspect-video rounded-xl overflow-hidden shrink-0 border border-zinc-800 shadow-xl">
-                    <Image src={img.url} alt={`Gallery image ${i}`} fill className="object-cover hover:scale-110 transition-transform duration-500" unoptimized />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Episodes */}
         {movie.servers && movie.servers.length > 0 && (
           <div className="mt-20">
             <h3 className="text-2xl font-bold font-outfit mb-8">Danh sách tập</h3>
             <EpisodeList servers={movie.servers} movieSlug={movie.slug} />
+          </div>
+        )}
+
+        {/* Cast — bất đồng bộ, không block UI chính */}
+        {peoples && peoples.length > 0 && (
+          <div className="mt-16">
+            <h3 className="text-xl font-bold font-outfit mb-6 flex items-center gap-2">
+              <Users className="w-6 h-6 text-red-500" />
+              Dàn Diễn Viên
+            </h3>
+            <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
+              {peoples.map((person: any, i: number) => (
+                <div key={i} className="flex flex-col items-center text-center min-w-[100px] group">
+                  <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden mb-3 border-2 border-zinc-800 group-hover:border-red-500 transition-colors shadow-xl bg-zinc-900">
+                    {person.image ? (
+                      <Image src={person.image} alt={person.name} fill className="object-cover" unoptimized />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-zinc-600 bg-zinc-800">
+                        {person.name.charAt(0)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-bold text-white line-clamp-1 px-1">{person.name}</span>
+                    {person.originalName && (
+                      <span className="text-[10px] text-zinc-400 line-clamp-1 italic px-1">({person.originalName})</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-zinc-500 mt-1 line-clamp-1 px-1">{person.role || 'Diễn viên'}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

@@ -5,13 +5,14 @@
  * All hooks use TanStack Query for caching, deduplication, and loading states.
  */
 
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { movieRepository } from '@/data/repositories/MovieRepositoryImpl';
 import {
   getHomeMovies,
   getMovieDetails,
   searchMovies,
-  getStreamLink,
+  resolveStreamLink,
   getMovieList,
   getExploreMovies,
 } from '@/application/useCases/MovieUseCases';
@@ -25,12 +26,13 @@ export function useHomeMovies() {
   });
 }
 
-export function useMovieDetails(slug: string, options?: { enabled?: boolean }) {
+export function useMovieDetails(slug: string, options?: { enabled?: boolean; initialData?: Movie | null }) {
   return useQuery({
     queryKey: ['movie-detail', slug],
     queryFn: () => getMovieDetails(slug),
     enabled: !!slug && (options?.enabled ?? true),
     staleTime: 10 * 60 * 1000,
+    initialData: options?.initialData ?? undefined,
   });
 }
 
@@ -43,13 +45,15 @@ export function useSearchMovies(keyword: string, page = 1) {
   });
 }
 
-export function useStreamLink(slug: string, episodeSlug: string) {
-  return useQuery({
-    queryKey: ['stream-link', slug, episodeSlug],
-    queryFn: () => getStreamLink(slug, episodeSlug),
-    enabled: !!slug && !!episodeSlug,
-    staleTime: 30 * 60 * 1000,
-  });
+/**
+ * Resolve stream link từ movie data đã có — không gọi thêm API.
+ * movie phải được lấy từ useMovieDetails trước.
+ */
+export function useStreamLink(movie: Movie | undefined, episodeSlug: string) {
+  return useMemo(
+    () => (movie && episodeSlug ? resolveStreamLink(movie, episodeSlug) : null),
+    [movie, episodeSlug]
+  );
 }
 
 export function useMovieList(type: string, page = 1) {

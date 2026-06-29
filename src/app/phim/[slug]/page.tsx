@@ -8,10 +8,9 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  
+
   try {
     const movie = await getMovieDetails(slug);
     if (!movie) return { title: 'Không tìm thấy phim' };
@@ -23,17 +22,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         images: [movie.posterUrl || movie.thumbUrl],
       },
     };
-  } catch (error) {
+  } catch {
     return { title: 'Lỗi' };
   }
 }
 
-export default function MovieDetailPage({ params }: Props) {
+export default async function MovieDetailPage({ params }: Props) {
+  const { slug } = await params;
+  // Fetch một lần ở server — Next.js tự deduplicate với generateMetadata (same request)
+  const movie = await getMovieDetails(slug);
+
   return (
     <Suspense fallback={<DetailSkeleton />}>
-      {params.then(({ slug }) => (
-        <MovieDetailClient slug={slug} />
-      ))}
+      <MovieDetailClient slug={slug} initialMovie={movie} />
     </Suspense>
   );
 }

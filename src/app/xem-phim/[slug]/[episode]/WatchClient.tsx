@@ -11,7 +11,7 @@ import { addToHistory } from '@/lib/userStore';
 
 export default function WatchClient({ slug, episode }: { slug: string; episode: string }) {
   const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug);
-  const { data: streamInfo, isLoading: isStreamLoading, isError: isStreamError } = useStreamLink(slug, episode);
+  const streamInfo = useStreamLink(movie ?? undefined, episode);
 
   useEffect(() => {
     if (movie) {
@@ -80,13 +80,9 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
 
       {/* Video Player Area */}
       <div className="bg-black/50 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl mb-12">
-        {isStreamLoading ? (
-          <div className="w-full aspect-video flex items-center justify-center bg-zinc-900">
-            <div className="animate-spin w-10 h-10 border-4 border-primary border-t-transparent rounded-full" />
-          </div>
-        ) : isStreamError || !streamInfo ? (
+        {!streamInfo ? (
           <div className="w-full aspect-video flex flex-col items-center justify-center bg-zinc-900 text-zinc-400">
-            <p className="mb-2">Lỗi tải video.</p>
+            <p className="mb-2">Không tìm thấy nguồn phát.</p>
             <p className="text-sm">Vui lòng thử lại sau hoặc chọn server khác.</p>
           </div>
         ) : (

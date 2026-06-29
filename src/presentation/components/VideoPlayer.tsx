@@ -199,8 +199,12 @@ function HLSPlayer({
     if (Hls.isSupported()) {
       hls = new Hls({
         maxLoadingDelay: 4,
-        maxBufferLength: 30,
+        maxBufferLength: 15, // Buffer ahead 15s instead of 30s for faster initial load
+        maxMaxBufferLength: 30,
         enableWorker: true,
+        startLevel: -1, // Auto start quality level based on network bandwidth
+        capLevelToPlayerSize: true, // Cap quality to video container size (saves bandwidth)
+        abrEwmaDefaultEstimate: 500000, // Estimate initial speed at 500kbps (starts faster)
       });
       hls.loadSource(url);
       hls.attachMedia(video);
@@ -875,13 +879,19 @@ function HLSPlayer({
 }
 
 // ─── Video Preview ───────────────────────────────────────────
+// Chỉ hiển thị trên desktop và có debounce để tránh tạo nhiều HLS connection
 
 function VideoPreview({ url, time }: { url: string; time: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    setIsDesktop(window.matchMedia('(min-width: 1024px)').matches);
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !isDesktop) return;
 
     let hls: Hls | null = null;
     if (Hls.isSupported()) {
@@ -899,13 +909,16 @@ function VideoPreview({ url, time }: { url: string; time: number }) {
     return () => {
       hls?.destroy();
     };
-  }, [url]);
+  }, [url, isDesktop]);
 
   useEffect(() => {
+    if (!isDesktop) return;
     if (videoRef.current && Math.abs(videoRef.current.currentTime - time) > 1) {
       videoRef.current.currentTime = time;
     }
-  }, [time]);
+  }, [time, isDesktop]);
+
+  if (!isDesktop) return <div className="w-full h-full bg-zinc-900" />;
 
   return <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />;
 }

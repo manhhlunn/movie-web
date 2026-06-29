@@ -28,76 +28,7 @@ export async function getHomeMovies(): Promise<HomePageData> {
 // ─── Movie Details ───────────────────────────────────────────
 
 export async function getMovieDetails(slug: string): Promise<Movie | null> {
-  let movie = await movieRepository.getMovieDetails(slug);
-  
-  if (movie) {
-    // 1. Auto-resolve missing TMDB/IMDb IDs using TMDB Search
-    if (!movie.tmdb?.id || movie.tmdb.id === '0' || movie.tmdb.id === '') {
-      try {
-        const token = process.env.NEXT_PUBLIC_TMDB_TOKEN || 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIwZWFmN2NiN2FmMzBmYzA2MzMzMTc5NzcwOWYwM2Y3OSIsIm5iZiI6MTY5NDM5OTU0My43NTksInN1YiI6IjY0ZmU3YzM3ZTBjYTdmMDBjYmU5YjJmNSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.neCfOUwWVTvCaFB_Jyy4EH2gDRA5F7YeC7vdNINjj-A';
-        const type = (movie.type === 'series' || movie.type === 'tvshows') ? 'tv' : 'movie';
-        const searchUrl = `https://api.themoviedb.org/3/search/${type}?query=${encodeURIComponent(movie.originName || movie.name)}&year=${movie.year}`;
-        
-        const searchRes = await fetch(searchUrl, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).then(r => r.ok ? r.json() : null);
-
-        if (searchRes?.results?.[0]) {
-          const result = searchRes.results[0];
-          const extRes = await fetch(`https://api.themoviedb.org/3/${type}/${result.id}/external_ids`, {
-            headers: { Authorization: `Bearer ${token}` }
-          }).then(r => r.ok ? r.json() : null);
-
-          movie = {
-            ...movie,
-            tmdb: {
-              type: type as 'movie' | 'tv',
-              id: String(result.id),
-              voteAverage: result.vote_average,
-              voteCount: result.vote_count,
-              season: 1
-            },
-            imdbId: extRes?.imdb_id || movie.imdbId
-          };
-        }
-      } catch (e) {
-        console.error('Auto-resolution failed in UseCase:', e);
-      }
-    }
-
-    // 2. Fetch additional sources from phimapi.com (KKPhim)
-    if (movie.tmdb?.id) {
-      try {
-        const res = await fetch(`https://phimapi.com/tmdb/${movie.tmdb.type}/${movie.tmdb.id}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.episodes && Array.isArray(data.episodes)) {
-            if (!movie.servers) movie.servers = [];
-            
-            data.episodes.forEach((s: any) => {
-              // Avoid duplicate servers if OPhim already has it (rare but possible)
-              if (movie!.servers!.some(existing => existing.serverName === s.server_name)) return;
-              
-              movie!.servers!.push({
-                serverName: s.server_name || 'Nguồn Phụ',
-                episodes: s.server_data.map((ep: any) => ({
-                  name: ep.name,
-                  slug: ep.slug,
-                  filename: ep.filename || '',
-                  linkEmbed: ep.link_embed || '',
-                  linkM3u8: ep.link_m3u8 || ''
-                }))
-              });
-            });
-          }
-        }
-      } catch (e) {
-        console.error('Error fetching additional movie sources:', e);
-      }
-    }
-  }
-  
-  return movie;
+  return movieRepository.getMovieDetails(slug);
 }
 
 // ─── Search ──────────────────────────────────────────────────
@@ -119,12 +50,12 @@ export interface StreamInfo {
   movie: Movie;
 }
 
-export async function getStreamLink(
-  slug: string,
-  episodeSlug: string
-): Promise<StreamInfo | null> {
-  const movie = await getMovieDetails(slug);
-  if (!movie || !movie.servers) return null;
+/**
+ * Resolve stream link từ movie object đã có sẵn (không fetch lại).
+ * Dùng khi đã có movie data từ useMovieDetails.
+ */
+export function resolveStreamLink(movie: Movie, episodeSlug: string): StreamInfo | null {
+  if (!movie.servers) return null;
 
   for (const server of movie.servers) {
     const episode = server.episodes.find((ep) => ep.slug === episodeSlug);

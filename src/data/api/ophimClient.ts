@@ -1,24 +1,25 @@
 /**
- * OPhim API Client — Axios instance configured for the OPhim REST API.
+ * OPhim fetch helper — dùng native fetch để tận dụng Next.js Data Cache.
+ * Trên Vercel, các response được cache tại edge (ISR-style), tránh gọi lại
+ * ophim1.com mỗi request. revalidate mặc định 5 phút.
  */
 
-import axios from 'axios';
+const BASE_URL = 'https://ophim1.com';
 
-const ophimClient = axios.create({
-  baseURL: 'https://ophim1.com',
-  timeout: 15000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+export async function ophimFetch<T = unknown>(
+  path: string,
+  revalidate: number = 300
+): Promise<T> {
+  const url = `${BASE_URL}${path}`;
 
-// Response interceptor for error handling
-ophimClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.error('[OPhim API Error]', error?.message || error);
-    return Promise.reject(error);
+  const res = await fetch(url, {
+    next: { revalidate },
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!res.ok) {
+    throw new Error(`[OPhim] ${res.status} ${res.statusText} — ${url}`);
   }
-);
 
-export default ophimClient;
+  return res.json() as Promise<T>;
+}
