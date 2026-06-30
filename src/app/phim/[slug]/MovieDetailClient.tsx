@@ -3,12 +3,12 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Play, Calendar, Clock, Star, Film, Users } from 'lucide-react';
-import { useMovieDetails, useMoviePeoples, useMovieAIAnalysis } from '@/presentation/hooks/useMovies';
+import { useMovieDetails, useMoviePeoples, useMovieAIAnalysis, useMovieExtraSources } from '@/presentation/hooks/useMovies';
 import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { cn } from '@/lib/utils';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Heart, Sparkles } from 'lucide-react';
 import { toggleFavorite, isFavorite, addToHistory } from '@/lib/userStore';
 
@@ -42,10 +42,24 @@ const GeminiIcon = ({ className }: { className?: string }) => (
 
 export default function MovieDetailClient({ slug, initialMovie }: { slug: string; initialMovie?: Movie | null }) {
   const { data: movie, isLoading, isError } = useMovieDetails(slug, { initialData: initialMovie });
+  const { data: extraSources } = useMovieExtraSources(movie?.tmdb);
   const { data: peoples } = useMoviePeoples(slug, movie?.tmdb);
   const { data: aiAnalysis, isLoading: isAiLoading, isError: isAiError, error: aiError, refetch: generateAI } = useMovieAIAnalysis(movie);
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
+
+  const combinedServers = useMemo(() => {
+    if (!movie) return [];
+    const baseServers = movie.servers ? [...movie.servers] : [];
+    if (!extraSources || extraSources.length === 0) return baseServers;
+
+    const merged = [...baseServers];
+    extraSources.forEach((extra: any) => {
+      if (merged.some(existing => existing.serverName === extra.serverName)) return;
+      merged.push(extra);
+    });
+    return merged;
+  }, [movie, extraSources]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`watch-progress-${slug}`);
@@ -100,8 +114,8 @@ export default function MovieDetailClient({ slug, initialMovie }: { slug: string
 
   // Find first available episode for the Play button
   let firstEpisodeLink = '';
-  if (movie.servers && movie.servers.length > 0) {
-    const firstServer = movie.servers[0];
+  if (combinedServers && combinedServers.length > 0) {
+    const firstServer = combinedServers[0];
     if (firstServer.episodes && firstServer.episodes.length > 0) {
       firstEpisodeLink = `/xem-phim/${movie.slug}/${firstServer.episodes[0].slug}`;
     }
@@ -419,10 +433,10 @@ export default function MovieDetailClient({ slug, initialMovie }: { slug: string
         </div>
 
         {/* Episodes */}
-        {movie.servers && movie.servers.length > 0 && (
+        {combinedServers && combinedServers.length > 0 && (
           <div className="mt-20">
             <h3 className="text-2xl font-bold font-outfit mb-8">Danh sách tập</h3>
-            <EpisodeList servers={movie.servers} movieSlug={movie.slug} />
+            <EpisodeList servers={combinedServers} movieSlug={movie.slug} />
           </div>
         )}
 

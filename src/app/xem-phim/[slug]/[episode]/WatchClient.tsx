@@ -2,16 +2,34 @@
 
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
-import { useMovieDetails, useStreamLink } from '@/presentation/hooks/useMovies';
+import { useMovieDetails, useStreamLink, useMovieExtraSources } from '@/presentation/hooks/useMovies';
 import VideoPlayer from '@/presentation/components/VideoPlayer';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { addToHistory } from '@/lib/userStore';
 
 export default function WatchClient({ slug, episode }: { slug: string; episode: string }) {
   const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug);
-  const streamInfo = useStreamLink(movie ?? undefined, episode);
+  const { data: extraSources } = useMovieExtraSources(movie?.tmdb);
+
+  const combinedMovie = useMemo(() => {
+    if (!movie) return undefined;
+    const baseServers = movie.servers ? [...movie.servers] : [];
+    const merged = [...baseServers];
+    if (extraSources) {
+      extraSources.forEach((extra: any) => {
+        if (merged.some(existing => existing.serverName === extra.serverName)) return;
+        merged.push(extra);
+      });
+    }
+    return {
+      ...movie,
+      servers: merged,
+    };
+  }, [movie, extraSources]);
+
+  const streamInfo = useStreamLink(combinedMovie, episode);
 
   useEffect(() => {
     if (movie) {
@@ -30,7 +48,7 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
     );
   }
 
-  if (!movie) {
+  if (!combinedMovie) {
     return (
       <div className="container py-24 text-center">
         <p className="text-red-500">Không tìm thấy thông tin phim.</p>
@@ -45,8 +63,8 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
   let episodeName = episode;
   let nextEpisodeSlug: string | undefined;
 
-  if (movie.servers) {
-    for (const server of movie.servers) {
+  if (combinedMovie.servers) {
+    for (const server of combinedMovie.servers) {
       const epIndex = server.episodes.findIndex((e) => e.slug === episode);
       if (epIndex !== -1) {
         episodeName = server.episodes[epIndex].name;
@@ -71,7 +89,7 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
         </Link>
         <h1 className="text-2xl md:text-3xl font-bold font-outfit">
           <Link href={`/phim/${slug}`} className="hover:text-primary transition-colors">
-            {movie.name}
+            {combinedMovie.name}
           </Link>
           <span className="text-zinc-500 mx-3">|</span>
           <span className="text-primary">Tập {episodeName}</span>
@@ -88,22 +106,22 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
         ) : (
           <VideoPlayer 
             linkM3u8={streamInfo.linkM3u8} 
-            poster={movie.posterUrl || movie.thumbUrl}
+            poster={combinedMovie.posterUrl || combinedMovie.thumbUrl}
             movieSlug={slug}
             episodeSlug={episode}
-            movie={movie}
+            movie={combinedMovie}
             nextEpisodeUrl={nextEpisodeSlug ? `/xem-phim/${slug}/${nextEpisodeSlug}` : undefined}
           />
         )}
       </div>
 
       {/* Episode Selection */}
-      {movie.servers && movie.servers.length > 0 && (
+      {combinedMovie.servers && combinedMovie.servers.length > 0 && (
         <div className="bg-zinc-900/30 border border-zinc-800/50 rounded-xl p-6">
           <h2 className="text-xl font-bold mb-6 font-outfit">Chọn tập</h2>
           <EpisodeList 
-            servers={movie.servers} 
-            movieSlug={movie.slug} 
+            servers={combinedMovie.servers} 
+            movieSlug={combinedMovie.slug} 
             currentEpisodeSlug={episode} 
           />
         </div>

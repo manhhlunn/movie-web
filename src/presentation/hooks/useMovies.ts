@@ -231,6 +231,38 @@ export function useMovieAIAnalysis(movie?: any) {
   });
 }
 
+export function useMovieExtraSources(tmdb?: Movie['tmdb']) {
+  return useQuery({
+    queryKey: ['movie-extra-sources', tmdb?.id],
+    queryFn: async () => {
+      if (!tmdb?.id) return [];
+      try {
+        const res = await fetch(`https://phimapi.com/tmdb/${tmdb.type}/${tmdb.id}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (data.episodes && Array.isArray(data.episodes)) {
+          return data.episodes.map((s: any) => ({
+            serverName: s.server_name || 'Nguồn Phụ',
+            episodes: s.server_data.map((ep: any) => ({
+              name: ep.name,
+              slug: ep.slug,
+              filename: ep.filename || '',
+              linkEmbed: ep.link_embed || '',
+              linkM3u8: ep.link_m3u8 || ''
+            }))
+          }));
+        }
+      } catch (e) {
+        console.error('Error fetching additional movie sources:', e);
+      }
+      return [];
+    },
+    enabled: !!tmdb?.id,
+    staleTime: 30 * 60 * 1000, // 30 minutes
+  });
+}
+
+
 // Deprecated: Use individual hooks instead
 export function useMovieExtraDetails(slug: string, tmdb?: Movie['tmdb']) {
   const { data: peoples } = useMoviePeoples(slug, tmdb);
