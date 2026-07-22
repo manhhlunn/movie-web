@@ -29,17 +29,15 @@ const MovieCard = memo(({ movie, index = 0, className }: MovieCardProps) => {
     >
       <Link href={`/phim/${movie.slug}`} className="block">
         <div className="relative w-full aspect-[2/3] overflow-hidden">
-          {/* Static poster */}
           <Image
             src={imageSrc}
             alt={movie.name}
             fill
-            sizes="(max-width: 640px) 40vw, (max-width: 1024px) 20vw, 15vw"
+            sizes="(max-width: 640px) 33vw, (max-width: 1024px) 20vw, 12vw"
             quality={75}
             priority={index < 2}
             loading={index < 6 ? 'eager' : 'lazy'}
             className="object-cover transition-all duration-500 group-hover:scale-110"
-            unoptimized
           />
 
           {/* Quality badge */}

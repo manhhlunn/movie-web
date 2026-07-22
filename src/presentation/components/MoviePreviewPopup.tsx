@@ -117,7 +117,8 @@ export default function MoviePreviewPopup({ movie, rect, onClose, onMouseEnter, 
               alt={movie.name}
               fill
               className="object-cover"
-              unoptimized
+              sizes="(max-width: 640px) 100vw, 480px"
+              quality={75}
             />
           )}
 

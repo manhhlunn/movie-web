@@ -48,7 +48,7 @@ export default async function Home() {
           <MovieSlider 
             title={`Phim Bộ Hàn Quốc ${currentYear}`} 
             movies={heroData.items} 
-            seeMoreHref={`/quoc-gia/han-quoc?year=${currentYear}`}
+            seeMoreHref={`/danh-sach/phim-bo?year=${currentYear}&country=han-quoc`}
           />
         )}
 

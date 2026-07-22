@@ -66,8 +66,9 @@ export default function ContinueWatching() {
                       src={movie.posterUrl}
                       alt={movie.name}
                       fill
+                      sizes="(max-width: 768px) 256px, 320px"
+                      quality={75}
                       className="object-cover transition-transform duration-500 group-hover:scale-110"
-                      unoptimized
                     />
                     <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                       <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center transform scale-0 group-hover:scale-100 transition-transform shadow-xl">
