@@ -6,7 +6,7 @@ import { useMovieDetails, useStreamLink, useMovieExtraSources } from '@/presenta
 import VideoPlayer from '@/presentation/components/VideoPlayer';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { addToHistory } from '@/lib/userStore';
 
 export default function WatchClient({ slug, episode }: { slug: string; episode: string }) {
@@ -29,13 +29,43 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
     };
   }, [movie, extraSources]);
 
-  const streamInfo = useStreamLink(combinedMovie, episode);
+  const [currentEpisodeSlug, setCurrentEpisodeSlug] = useState(episode);
+
+  // Sync state if episode prop changes (e.g. from back/forward buttons or direct navigation)
+  useEffect(() => {
+    setCurrentEpisodeSlug(episode);
+  }, [episode]);
+
+  const streamInfo = useStreamLink(combinedMovie, currentEpisodeSlug);
 
   useEffect(() => {
     if (movie) {
       addToHistory(movie);
     }
   }, [movie]);
+
+  const handleEpisodeChange = (newEpisodeSlug: string) => {
+    setCurrentEpisodeSlug(newEpisodeSlug);
+    
+    // Update browser address bar without full page transition
+    const newPath = `/xem-phim/${slug}/${newEpisodeSlug}`;
+    window.history.pushState(null, '', newPath);
+    
+    // Update document title
+    if (combinedMovie) {
+      let nextEpName = newEpisodeSlug;
+      if (combinedMovie.servers) {
+        for (const server of combinedMovie.servers) {
+          const ep = server.episodes.find((e) => e.slug === newEpisodeSlug);
+          if (ep) {
+            nextEpName = ep.name;
+            break;
+          }
+        }
+      }
+      document.title = `Tập ${nextEpName} - ${combinedMovie.name}`;
+    }
+  };
 
   if (isMovieLoading) {
     return (
@@ -60,12 +90,12 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
   }
 
   // Find the active episode name for display
-  let episodeName = episode;
+  let episodeName = currentEpisodeSlug;
   let nextEpisodeSlug: string | undefined;
 
   if (combinedMovie.servers) {
     for (const server of combinedMovie.servers) {
-      const epIndex = server.episodes.findIndex((e) => e.slug === episode);
+      const epIndex = server.episodes.findIndex((e) => e.slug === currentEpisodeSlug);
       if (epIndex !== -1) {
         episodeName = server.episodes[epIndex].name;
         if (epIndex < server.episodes.length - 1) {
@@ -108,9 +138,10 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
             linkM3u8={streamInfo.linkM3u8} 
             poster={combinedMovie.posterUrl || combinedMovie.thumbUrl}
             movieSlug={slug}
-            episodeSlug={episode}
+            episodeSlug={currentEpisodeSlug}
             movie={combinedMovie}
             nextEpisodeUrl={nextEpisodeSlug ? `/xem-phim/${slug}/${nextEpisodeSlug}` : undefined}
+            onNextEpisode={nextEpisodeSlug ? () => handleEpisodeChange(nextEpisodeSlug) : undefined}
           />
         )}
       </div>
@@ -122,7 +153,8 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
           <EpisodeList 
             servers={combinedMovie.servers} 
             movieSlug={combinedMovie.slug} 
-            currentEpisodeSlug={episode} 
+            currentEpisodeSlug={currentEpisodeSlug} 
+            onSelectEpisode={handleEpisodeChange}
           />
         </div>
       )}

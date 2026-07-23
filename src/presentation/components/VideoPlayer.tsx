@@ -32,12 +32,13 @@ interface VideoPlayerProps {
   episodeSlug?: string;
   movie?: any;
   nextEpisodeUrl?: string;
+  onNextEpisode?: () => void;
 }
 
-export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug, movie, nextEpisodeUrl }: VideoPlayerProps) {
+export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug, movie, nextEpisodeUrl, onNextEpisode }: VideoPlayerProps) {
   // If we have an m3u8 link, use custom HLS player. Otherwise fall back to iframe.
   if (linkM3u8) {
-    return <HLSPlayer url={linkM3u8} title={title} poster={poster} movieSlug={movieSlug} episodeSlug={episodeSlug} movie={movie} nextEpisodeUrl={nextEpisodeUrl} />;
+    return <HLSPlayer url={linkM3u8} title={title} poster={poster} movieSlug={movieSlug} episodeSlug={episodeSlug} movie={movie} nextEpisodeUrl={nextEpisodeUrl} onNextEpisode={onNextEpisode} />;
   }
 
   if (linkEmbed) {
@@ -60,7 +61,8 @@ function HLSPlayer({
   movieSlug, 
   episodeSlug,
   movie,
-  nextEpisodeUrl
+  nextEpisodeUrl,
+  onNextEpisode
 }: { 
   url: string; 
   title?: string; 
@@ -69,6 +71,7 @@ function HLSPlayer({
   episodeSlug?: string;
   movie?: any;
   nextEpisodeUrl?: string;
+  onNextEpisode?: () => void;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -281,6 +284,22 @@ function HLSPlayer({
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+
+      // Clean up fullscreen on unmount to prevent browser UI hanging/glitches
+      if (
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      ) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        } else if ((document as any).webkitExitFullscreen) {
+          try {
+            (document as any).webkitExitFullscreen();
+          } catch (e) {}
+        }
+      }
     };
   }, []);
 
@@ -567,8 +586,34 @@ function HLSPlayer({
     }
   };
 
-  const handleNextEpisode = () => {
+  const handleNextEpisode = async () => {
+    if (onNextEpisode) {
+      onNextEpisode();
+      return;
+    }
+
     if (nextEpisodeUrl) {
+      // Exit fullscreen if active to prevent UI freeze on Chrome/Safari
+      if (
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      ) {
+        try {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if ((document as any).webkitExitFullscreen) {
+            await (document as any).webkitExitFullscreen();
+          } else if ((document as any).mozCancelFullScreen) {
+            await (document as any).mozCancelFullScreen();
+          } else if ((document as any).msExitFullscreen) {
+            await (document as any).msExitFullscreen();
+          }
+        } catch (err) {
+          console.error('Error exiting fullscreen before navigation:', err);
+        }
+      }
       router.push(nextEpisodeUrl);
     }
   };

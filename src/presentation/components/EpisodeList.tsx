@@ -9,12 +9,14 @@ interface EpisodeListProps {
   servers: ServerData[];
   movieSlug: string;
   currentEpisodeSlug?: string;
+  onSelectEpisode?: (episodeSlug: string) => void;
 }
 
 export default function EpisodeList({
   servers,
   movieSlug,
   currentEpisodeSlug,
+  onSelectEpisode,
 }: EpisodeListProps) {
   if (!servers?.length) return null;
 
@@ -32,6 +34,12 @@ export default function EpisodeList({
                 <Link
                   key={ep.slug}
                   href={`/xem-phim/${movieSlug}/${ep.slug}`}
+                  onClick={(e) => {
+                    if (onSelectEpisode) {
+                      e.preventDefault();
+                      onSelectEpisode(ep.slug);
+                    }
+                  }}
                   className={cn(
                     'relative flex items-center justify-center py-2.5 px-2 rounded-lg text-sm font-medium transition-all duration-200',
                     isActive
