@@ -9,9 +9,14 @@ import { Skeleton } from '@/presentation/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { addToHistory } from '@/lib/userStore';
 
+import { useSearchParams } from 'next/navigation';
+
 export default function WatchClient({ slug, episode }: { slug: string; episode: string }) {
-  const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug);
-  const { data: extraSources } = useMovieExtraSources(movie?.tmdb);
+  const searchParams = useSearchParams();
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc') || 'ophim';
+
+  const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug, sourceParam);
+  const { data: extraSources } = useMovieExtraSources(movie, sourceParam);
 
   const combinedMovie = useMemo(() => {
     if (!movie) return undefined;
@@ -30,13 +35,14 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
   }, [movie, extraSources]);
 
   const [currentEpisodeSlug, setCurrentEpisodeSlug] = useState(episode);
+  const [selectedServerName, setSelectedServerName] = useState<string | undefined>(undefined);
 
   // Sync state if episode prop changes (e.g. from back/forward buttons or direct navigation)
   useEffect(() => {
     setCurrentEpisodeSlug(episode);
   }, [episode]);
 
-  const streamInfo = useStreamLink(combinedMovie, currentEpisodeSlug);
+  const streamInfo = useStreamLink(combinedMovie, currentEpisodeSlug, selectedServerName);
 
   useEffect(() => {
     if (movie) {
@@ -44,11 +50,14 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
     }
   }, [movie]);
 
-  const handleEpisodeChange = (newEpisodeSlug: string) => {
+  const handleEpisodeChange = (newEpisodeSlug: string, serverName?: string) => {
     setCurrentEpisodeSlug(newEpisodeSlug);
+    if (serverName) {
+      setSelectedServerName(serverName);
+    }
     
     // Update browser address bar without full page transition
-    const newPath = `/xem-phim/${slug}/${newEpisodeSlug}`;
+    const newPath = `/xem-phim/${slug}/${newEpisodeSlug}${sourceParam ? `?source=${sourceParam}` : ''}`;
     window.history.pushState(null, '', newPath);
     
     // Update document title
@@ -63,47 +72,41 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
           }
         }
       }
-      document.title = `Tập ${nextEpName} - ${combinedMovie.name}`;
+      document.title = `Xem ${combinedMovie.name} - Tập ${nextEpName}`;
     }
   };
 
+  // Next episode logic
+  let nextEpisodeSlug: string | null = null;
+  if (combinedMovie?.servers) {
+    for (const server of combinedMovie.servers) {
+      const idx = server.episodes.findIndex((e) => e.slug === currentEpisodeSlug);
+      if (idx !== -1 && idx < server.episodes.length - 1) {
+        nextEpisodeSlug = server.episodes[idx + 1].slug;
+        break;
+      }
+    }
+  }
+
   if (isMovieLoading) {
     return (
-      <div className="container py-8 max-w-7xl">
-        <Skeleton className="w-48 h-8 mb-6" />
-        <Skeleton className="w-full aspect-video rounded-xl mb-8" />
-        <Skeleton className="w-1/3 h-10 mb-8" />
-        <Skeleton className="w-full h-40" />
+      <div className="container py-10 max-w-7xl">
+        <Skeleton className="w-full aspect-video rounded-xl mb-6" />
+        <Skeleton className="w-1/3 h-8 mb-4" />
+        <Skeleton className="w-full h-32 rounded-xl" />
       </div>
     );
   }
 
   if (!combinedMovie) {
     return (
-      <div className="container py-24 text-center">
-        <p className="text-red-500">Không tìm thấy thông tin phim.</p>
-        <Link href="/" className="text-primary hover:underline mt-4 inline-block">
+      <div className="container py-20 text-center">
+        <h1 className="text-2xl font-bold text-red-500 mb-4">Không tìm thấy phim</h1>
+        <Link href="/" className="text-zinc-400 hover:text-white underline">
           Về trang chủ
         </Link>
       </div>
     );
-  }
-
-  // Find the active episode name for display
-  let episodeName = currentEpisodeSlug;
-  let nextEpisodeSlug: string | undefined;
-
-  if (combinedMovie.servers) {
-    for (const server of combinedMovie.servers) {
-      const epIndex = server.episodes.findIndex((e) => e.slug === currentEpisodeSlug);
-      if (epIndex !== -1) {
-        episodeName = server.episodes[epIndex].name;
-        if (epIndex < server.episodes.length - 1) {
-          nextEpisodeSlug = server.episodes[epIndex + 1].slug;
-        }
-        break;
-      }
-    }
   }
 
   return (
@@ -111,37 +114,37 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
       {/* Breadcrumb & Title */}
       <div className="mb-6">
         <Link 
-          href={`/phim/${slug}`}
+          href={`/phim/${slug}${sourceParam ? `?source=${sourceParam}` : ''}`}
           className="inline-flex items-center text-zinc-400 hover:text-white transition-colors mb-4 text-sm"
         >
           <ChevronLeft className="w-4 h-4 mr-1" />
           Trở về chi tiết phim
         </Link>
         <h1 className="text-2xl md:text-3xl font-bold font-outfit">
-          <Link href={`/phim/${slug}`} className="hover:text-primary transition-colors">
+          <Link href={`/phim/${slug}${sourceParam ? `?source=${sourceParam}` : ''}`} className="hover:text-primary transition-colors">
             {combinedMovie.name}
           </Link>
           <span className="text-zinc-500 mx-3">|</span>
-          <span className="text-primary">Tập {episodeName}</span>
+          <span className="text-red-500 font-medium">Tập {streamInfo?.episodeName || currentEpisodeSlug}</span>
         </h1>
       </div>
 
-      {/* Video Player Area */}
-      <div className="bg-black/50 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl mb-12">
+      {/* Main Video Player */}
+      <div className="mb-8">
         {!streamInfo ? (
-          <div className="w-full aspect-video flex flex-col items-center justify-center bg-zinc-900 text-zinc-400">
-            <p className="mb-2">Không tìm thấy nguồn phát.</p>
-            <p className="text-sm">Vui lòng thử lại sau hoặc chọn server khác.</p>
+          <div className="relative w-full aspect-video bg-zinc-900 rounded-xl flex items-center justify-center">
+            <p className="text-zinc-500 text-sm">Không có nguồn phát cho tập này</p>
           </div>
         ) : (
           <VideoPlayer 
             linkM3u8={streamInfo.linkM3u8} 
+            linkEmbed={streamInfo.linkEmbed}
             poster={combinedMovie.posterUrl || combinedMovie.thumbUrl}
             movieSlug={slug}
             episodeSlug={currentEpisodeSlug}
             movie={combinedMovie}
-            nextEpisodeUrl={nextEpisodeSlug ? `/xem-phim/${slug}/${nextEpisodeSlug}` : undefined}
-            onNextEpisode={nextEpisodeSlug ? () => handleEpisodeChange(nextEpisodeSlug) : undefined}
+            nextEpisodeUrl={nextEpisodeSlug ? `/xem-phim/${slug}/${nextEpisodeSlug}${sourceParam ? `?source=${sourceParam}` : ''}` : undefined}
+            onNextEpisode={nextEpisodeSlug ? () => handleEpisodeChange(nextEpisodeSlug!, selectedServerName) : undefined}
           />
         )}
       </div>
@@ -154,6 +157,7 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
             servers={combinedMovie.servers} 
             movieSlug={combinedMovie.slug} 
             currentEpisodeSlug={currentEpisodeSlug} 
+            currentServerName={selectedServerName || streamInfo?.serverName || combinedMovie.servers[0]?.serverName}
             onSelectEpisode={handleEpisodeChange}
           />
         </div>

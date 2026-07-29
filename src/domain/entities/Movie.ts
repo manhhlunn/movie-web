@@ -70,6 +70,8 @@ export interface Movie {
   trailerUrl?: string;
   /** Last modified timestamp */
   modifiedTime?: string;
+  /** Primary source tag */
+  source?: 'ophim' | 'phimapi' | 'nguonc';
   /** Watch progress fields */
   lastEpisodeSlug?: string;
   lastTime?: number;

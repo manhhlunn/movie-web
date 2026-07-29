@@ -38,6 +38,34 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "image.tmdb.org",
       },
+      {
+        protocol: "https",
+        hostname: "phimimg.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.phimimg.com",
+      },
+      {
+        protocol: "https",
+        hostname: "phimapi.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.phimapi.com",
+      },
+      {
+        protocol: "https",
+        hostname: "phim.nguonc.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.nguonc.com",
+      },
+      {
+        protocol: "https",
+        hostname: "nguonc.com",
+      },
     ],
   },
 };

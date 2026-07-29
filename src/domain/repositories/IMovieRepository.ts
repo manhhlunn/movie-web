@@ -25,10 +25,10 @@ export interface IMovieRepository {
   getCinemaMovies(page?: number): Promise<MovieListResult>;
 
   /** Get full movie detail by slug (includes episodes) */
-  getMovieDetails(slug: string): Promise<Movie | null>;
+  getMovieDetails(slug: string, source?: 'ophim' | 'phimapi' | 'nguonc'): Promise<Movie | null>;
 
-  /** Search movies by keyword */
-  searchMovies(keyword: string, page?: number): Promise<MovieListResult>;
+  /** Search movies by keyword from specific source */
+  searchMovies(keyword: string, page?: number, source?: 'ophim' | 'phimapi' | 'nguonc'): Promise<MovieListResult>;
 
   /** Get movies by category slug */
   getMoviesByCategory(

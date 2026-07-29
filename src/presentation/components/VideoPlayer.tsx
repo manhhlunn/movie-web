@@ -36,9 +36,23 @@ interface VideoPlayerProps {
 }
 
 export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug, movie, nextEpisodeUrl, onNextEpisode }: VideoPlayerProps) {
-  // If we have an m3u8 link, use custom HLS player. Otherwise fall back to iframe.
-  if (linkM3u8) {
-    return <HLSPlayer url={linkM3u8} title={title} poster={poster} movieSlug={movieSlug} episodeSlug={episodeSlug} movie={movie} nextEpisodeUrl={nextEpisodeUrl} onNextEpisode={onNextEpisode} />;
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const isM3u8Valid = !useIframeFallback && !!(linkM3u8 && linkM3u8.toLowerCase().includes('.m3u8'));
+
+  if (isM3u8Valid && linkM3u8) {
+    return (
+      <HLSPlayer 
+        url={linkM3u8} 
+        title={title} 
+        poster={poster} 
+        movieSlug={movieSlug} 
+        episodeSlug={episodeSlug} 
+        movie={movie} 
+        nextEpisodeUrl={nextEpisodeUrl} 
+        onNextEpisode={onNextEpisode} 
+        onError={() => setUseIframeFallback(true)}
+      />
+    );
   }
 
   if (linkEmbed) {
@@ -62,7 +76,8 @@ function HLSPlayer({
   episodeSlug,
   movie,
   nextEpisodeUrl,
-  onNextEpisode
+  onNextEpisode,
+  onError,
 }: { 
   url: string; 
   title?: string; 
@@ -72,6 +87,7 @@ function HLSPlayer({
   movie?: any;
   nextEpisodeUrl?: string;
   onNextEpisode?: () => void;
+  onError?: () => void;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -217,8 +233,21 @@ function HLSPlayer({
       });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
-          console.error('HLS fatal error', data);
-          hls?.destroy();
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.warn('HLS network error, attempting recovery...', data);
+              hls?.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.warn('HLS media error, attempting recovery...', data);
+              hls?.recoverMediaError();
+              break;
+            default:
+              console.error('Unrecoverable HLS error:', data);
+              hls?.destroy();
+              onError?.();
+              break;
+          }
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -978,8 +1007,7 @@ function IframePlayer({ url, title }: { url: string; title?: string }) {
         title={title || 'Video player'}
         className="w-full h-full border-0"
         allowFullScreen
-        allow="autoplay; fullscreen; picture-in-picture"
-        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
       />
     </div>
   );

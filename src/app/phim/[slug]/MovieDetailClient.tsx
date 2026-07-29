@@ -12,6 +12,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Heart, Sparkles } from 'lucide-react';
 import { toggleFavorite, isFavorite, addToHistory } from '@/lib/userStore';
 
+import { useSearchParams } from 'next/navigation';
+
 function getYouTubeEmbedId(url: string): string | null {
   if (!url) return null;
   const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
@@ -26,7 +28,7 @@ const GeminiIcon = ({ className }: { className?: string }) => (
     className={className}
   >
     <path 
-      d="M12 2.5C12 2.5 13 10 21.5 11.5C21.5 11.5 13 13 12 21.5C12 21.5 11 13 2.5 11.5C2.5 11.5 11 10 12 2.5Z" 
+      d="M12 2.5C12 2.5 13 10 21.5 11.5C21.5 11.5 13 13 12 21.5C12 21.5 11 10 2.5 11.5C2.5 11.5 11 10 12 2.5Z" 
       fill="url(#gemini_gradient)"
     />
     <defs>
@@ -40,9 +42,20 @@ const GeminiIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export default function MovieDetailClient({ slug, initialMovie }: { slug: string; initialMovie?: Movie | null }) {
-  const { data: movie, isLoading, isError } = useMovieDetails(slug, { initialData: initialMovie });
-  const { data: extraSources } = useMovieExtraSources(movie?.tmdb);
+export default function MovieDetailClient({
+  slug,
+  initialMovie,
+  sourceParam: propSource,
+}: {
+  slug: string;
+  initialMovie?: Movie | null;
+  sourceParam?: 'ophim' | 'phimapi' | 'nguonc';
+}) {
+  const searchParams = useSearchParams();
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc') || propSource || initialMovie?.source || 'ophim';
+
+  const { data: movie, isLoading, isError } = useMovieDetails(slug, sourceParam, { initialData: initialMovie });
+  const { data: extraSources } = useMovieExtraSources(movie, sourceParam);
   const { data: peoples } = useMoviePeoples(slug, movie?.tmdb);
   const { data: aiAnalysis, isLoading: isAiLoading, isError: isAiError, error: aiError, refetch: generateAI } = useMovieAIAnalysis(movie);
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
@@ -109,15 +122,15 @@ export default function MovieDetailClient({ slug, initialMovie }: { slug: string
     );
   }
 
-  const backdropImage = movie.posterUrl || movie.thumbUrl;
-  const posterImage = movie.thumbUrl || movie.posterUrl;
+  const backdropImage = movie.thumbUrl || movie.posterUrl;
+  const posterImage = movie.posterUrl || movie.thumbUrl;
 
   // Find first available episode for the Play button
   let firstEpisodeLink = '';
   if (combinedServers && combinedServers.length > 0) {
     const firstServer = combinedServers[0];
     if (firstServer.episodes && firstServer.episodes.length > 0) {
-      firstEpisodeLink = `/xem-phim/${movie.slug}/${firstServer.episodes[0].slug}`;
+      firstEpisodeLink = `/xem-phim/${movie.slug}/${firstServer.episodes[0].slug}?source=${sourceParam}`;
     }
   }
 
@@ -438,7 +451,7 @@ export default function MovieDetailClient({ slug, initialMovie }: { slug: string
         {combinedServers && combinedServers.length > 0 && (
           <div className="mt-20">
             <h3 className="text-2xl font-bold font-outfit mb-8">Danh sách tập</h3>
-            <EpisodeList servers={combinedServers} movieSlug={movie.slug} />
+            <EpisodeList servers={combinedServers} movieSlug={movie.slug} source={sourceParam} />
           </div>
         )}
 

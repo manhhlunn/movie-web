@@ -4,40 +4,59 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { ServerData } from '@/domain/entities/Movie';
 import { Play } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
 interface EpisodeListProps {
   servers: ServerData[];
   movieSlug: string;
   currentEpisodeSlug?: string;
-  onSelectEpisode?: (episodeSlug: string) => void;
+  currentServerName?: string;
+  source?: string;
+  onSelectEpisode?: (episodeSlug: string, serverName?: string) => void;
 }
 
 export default function EpisodeList({
   servers,
   movieSlug,
   currentEpisodeSlug,
+  currentServerName,
+  source: propSource,
   onSelectEpisode,
 }: EpisodeListProps) {
+  const searchParams = useSearchParams();
+  const sourceParam = searchParams.get('source') || propSource;
+
   if (!servers?.length) return null;
+
+  const activeServerName = currentServerName || servers[0].serverName;
 
   return (
     <div className="space-y-6">
       {servers.map((server, si) => (
         <div key={si}>
-          <h3 className="text-sm font-semibold text-zinc-400 mb-3 uppercase tracking-wider">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-3 tracking-wide">
             {server.serverName}
           </h3>
           <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3">
             {server.episodes.map((ep) => {
-              const isActive = ep.slug === currentEpisodeSlug;
+              const isMatchSlug =
+                ep.slug === currentEpisodeSlug ||
+                ep.name === currentEpisodeSlug ||
+                `tap-${ep.slug}` === currentEpisodeSlug ||
+                ep.slug === `tap-${currentEpisodeSlug}`;
+
+              const isActive = isMatchSlug && server.serverName === activeServerName;
+
+              const href = `/xem-phim/${movieSlug}/${ep.slug}${sourceParam ? `?source=${sourceParam}` : ''}`;
+
               return (
                 <Link
-                  key={ep.slug}
-                  href={`/xem-phim/${movieSlug}/${ep.slug}`}
+                  key={ep.slug + '-' + si}
+                  href={href}
                   onClick={(e) => {
                     if (onSelectEpisode) {
                       e.preventDefault();
-                      onSelectEpisode(ep.slug);
+                      onSelectEpisode(ep.slug, server.serverName);
                     }
                   }}
                   className={cn(

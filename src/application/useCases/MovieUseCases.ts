@@ -27,17 +27,21 @@ export async function getHomeMovies(): Promise<HomePageData> {
 
 // ─── Movie Details ───────────────────────────────────────────
 
-export async function getMovieDetails(slug: string): Promise<Movie | null> {
-  return movieRepository.getMovieDetails(slug);
+export async function getMovieDetails(
+  slug: string,
+  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+): Promise<Movie | null> {
+  return movieRepository.getMovieDetails(slug, source);
 }
 
 // ─── Search ──────────────────────────────────────────────────
 
 export async function searchMovies(
   keyword: string,
-  page = 1
+  page = 1,
+  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
 ): Promise<MovieListResult> {
-  return movieRepository.searchMovies(keyword, page);
+  return movieRepository.searchMovies(keyword, page, source);
 }
 
 // ─── Stream Link ─────────────────────────────────────────────
@@ -47,6 +51,7 @@ export interface StreamInfo {
   linkEmbed: string;
   episodeName: string;
   movieName: string;
+  serverName?: string;
   movie: Movie;
 }
 
@@ -54,19 +59,74 @@ export interface StreamInfo {
  * Resolve stream link từ movie object đã có sẵn (không fetch lại).
  * Dùng khi đã có movie data từ useMovieDetails.
  */
-export function resolveStreamLink(movie: Movie, episodeSlug: string): StreamInfo | null {
-  if (!movie.servers) return null;
+export function resolveStreamLink(
+  movie: Movie,
+  episodeSlug: string,
+  serverName?: string
+): StreamInfo | null {
+  if (!movie.servers || movie.servers.length === 0) return null;
 
+  // 1. If serverName is specified, find in that server first
+  if (serverName) {
+    const targetServer = movie.servers.find((s) => s.serverName === serverName);
+    if (targetServer) {
+      const ep = targetServer.episodes.find(
+        (e) =>
+          e.slug === episodeSlug ||
+          e.name === episodeSlug ||
+          e.slug === `tap-${episodeSlug}` ||
+          `tap-${e.slug}` === episodeSlug
+      );
+      if (ep) {
+        return {
+          linkM3u8: ep.linkM3u8 || '',
+          linkEmbed: ep.linkEmbed || '',
+          episodeName: ep.name || ep.filename,
+          movieName: movie.name,
+          movie,
+        };
+      }
+    }
+  }
+
+  // 2. Find episode by slug across all servers
   for (const server of movie.servers) {
-    const episode = server.episodes.find((ep) => ep.slug === episodeSlug);
+    const episode = server.episodes.find(
+      (ep) =>
+        ep.slug === episodeSlug ||
+        ep.name === episodeSlug ||
+        ep.slug === `tap-${episodeSlug}` ||
+        `tap-${ep.slug}` === episodeSlug
+    );
     if (episode) {
       return {
-        linkM3u8: episode.linkM3u8,
-        linkEmbed: episode.linkEmbed,
+        linkM3u8: episode.linkM3u8 || '',
+        linkEmbed: episode.linkEmbed || '',
         episodeName: episode.name || episode.filename,
         movieName: movie.name,
         movie,
       };
+    }
+  }
+
+  // 3. Fallback: if episodeSlug is numeric (e.g. "1" or "tap-1"), try index-based matching
+  const numMatch = episodeSlug.match(/\d+/);
+  if (numMatch) {
+    const num = parseInt(numMatch[0], 10);
+    for (const server of movie.servers) {
+      const episode = server.episodes.find((ep) => {
+        const epNum = ep.name.match(/\d+/) || ep.slug.match(/\d+/);
+        return epNum && parseInt(epNum[0], 10) === num;
+      });
+      if (episode) {
+        return {
+          linkM3u8: episode.linkM3u8 || '',
+          linkEmbed: episode.linkEmbed || '',
+          episodeName: episode.name || episode.filename,
+          movieName: movie.name,
+          movie,
+        };
+      }
     }
   }
 

@@ -26,9 +26,22 @@ function safeNumber(val: unknown, fallback = 0): number {
 }
 
 function resolveImageUrl(raw: string | undefined | null, cdn: string): string {
-  if (!raw) return '/placeholder-poster.jpg';
-  if (raw.startsWith('http')) return raw;
-  return `${cdn}/${raw}`;
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  
+  const cleanCdn = cdn.replace(/\/$/, '');
+  const cleanRaw = raw.startsWith('/') ? raw : `/${raw}`;
+
+  if (cleanRaw.startsWith('/upload/') && cleanCdn.endsWith('/upload/vod')) {
+    const domainOnly = cleanCdn.replace(/\/upload\/vod$/, '');
+    return `${domainOnly}${cleanRaw}`;
+  }
+  if (cleanRaw.startsWith('/uploads/') && cleanCdn.endsWith('/uploads/movies')) {
+    const domainOnly = cleanCdn.replace(/\/uploads\/movies$/, '');
+    return `${domainOnly}${cleanRaw}`;
+  }
+
+  return `${cleanCdn}${cleanRaw}`;
 }
 
 // ---------- public mappers ----------
@@ -59,17 +72,35 @@ export function mapEpisode(raw: Record<string, unknown>): Episode {
   };
 }
 
-export function mapServerData(raw: Record<string, unknown>): ServerData {
+export function mapServerData(
+  raw: Record<string, unknown>,
+  sourceTag?: 'ophim' | 'phimapi' | 'nguonc'
+): ServerData {
   const serverEpisodes = Array.isArray(raw?.server_data) ? raw.server_data : [];
+  let sName = safeString(raw?.server_name, 'Server #1');
+
+  if (sourceTag === 'ophim') {
+    if (!sName.toLowerCase().includes('ophim') && !sName.toLowerCase().includes('nguồn chính')) {
+      sName = `${sName} (Nguồn Chính - OPhim)`;
+    }
+  } else if (sourceTag === 'phimapi') {
+    if (!sName.toLowerCase().includes('phimapi') && !sName.toLowerCase().includes('nguồn phụ')) {
+      sName = `${sName} (Nguồn Phụ - PhimAPI)`;
+    }
+  } else if (sourceTag === 'nguonc') {
+    if (!sName.toLowerCase().includes('nguonc') && !sName.toLowerCase().includes('nguồn c')) {
+      sName = `${sName} (Nguồn C)`;
+    }
+  }
+
   return {
-    serverName: safeString(raw?.server_name),
+    serverName: sName,
     episodes: serverEpisodes.map((ep: Record<string, unknown>) => mapEpisode(ep)),
   };
 }
 
 /**
- * Map a single movie item from the OLD /danh-sach endpoint format.
- * These items have a minimal shape (no `type`, no `category` arrays).
+ * Map a single movie item from list responses.
  */
 export function mapMovieFromList(
   raw: Record<string, unknown>,
@@ -82,14 +113,35 @@ export function mapMovieFromList(
     ? raw.country.map((c: Record<string, unknown>) => mapCountry(c))
     : [];
 
+  const rawPosterStr = safeString(raw?.poster_url);
+  const rawThumbStr = safeString(raw?.thumb_url);
+
+  const posterMapped = resolveImageUrl(rawPosterStr, cdn);
+  const thumbMapped = resolveImageUrl(rawThumbStr, cdn);
+
+  const isPhimAPI =
+    cdn.includes('phimimg.com') ||
+    rawPosterStr.includes('phimimg.com') ||
+    rawThumbStr.includes('phimimg.com');
+
+  // PhimAPI: poster_url là poster dọc, thumb_url là thumb ngang
+  // OPhim (Nguồn chính): thumb_url là ảnh poster của danh sách phim
+  const posterUrl = isPhimAPI
+    ? (posterMapped || thumbMapped || '/placeholder-poster.jpg')
+    : (thumbMapped || posterMapped || '/placeholder-poster.jpg');
+
+  const thumbUrl = isPhimAPI
+    ? (thumbMapped || posterMapped || '/placeholder-poster.jpg')
+    : (posterMapped || thumbMapped || '/placeholder-poster.jpg');
+
   return {
     id: safeString(raw?._id),
     name: safeString(raw?.name),
     slug: safeString(raw?.slug),
     originName: safeString(raw?.origin_name),
     type: (safeString(raw?.type, 'single') as Movie['type']),
-    posterUrl: resolveImageUrl(safeString(raw?.poster_url), cdn),
-    thumbUrl: resolveImageUrl(safeString(raw?.thumb_url), cdn),
+    posterUrl,
+    thumbUrl,
     year: safeNumber(raw?.year),
     quality: safeString(raw?.quality, 'HD'),
     lang: safeString(raw?.lang, 'Vietsub'),
@@ -124,15 +176,17 @@ export function mapMovieFromList(
 export function mapMovieDetail(
   movieRaw: Record<string, unknown>,
   episodesRaw: unknown[],
-  cdn: string = DEFAULT_CDN
+  cdn: string = DEFAULT_CDN,
+  sourceTag?: 'ophim' | 'phimapi' | 'nguonc'
 ): Movie {
   const base = mapMovieFromList(movieRaw, cdn);
   const servers = Array.isArray(episodesRaw)
-    ? episodesRaw.map((s: any) => mapServerData(s))
+    ? episodesRaw.map((s: any) => mapServerData(s, sourceTag))
     : [];
 
   return {
     ...base,
+    source: sourceTag,
     description: safeString(movieRaw?.content || movieRaw?.description),
     trailerUrl: safeString(movieRaw?.trailer_url),
     servers,
@@ -166,7 +220,9 @@ export function mapNewlyUpdatedResponse(data: Record<string, unknown>): MovieLis
 export function mapV1ListResponse(body: Record<string, unknown>): MovieListResult {
   const data = body?.data as Record<string, unknown> | undefined;
   const cdnDomain = safeString(data?.APP_DOMAIN_CDN_IMAGE, 'https://img.ophim.live');
-  const cdn = `${cdnDomain}/uploads/movies`;
+  const cdn = cdnDomain.includes('phimimg.com')
+    ? `${cdnDomain}/upload/vod`
+    : `${cdnDomain}/uploads/movies`;
   const items = Array.isArray(data?.items) ? data.items : [];
   const params = data?.params as Record<string, unknown> | undefined;
   const pagination = params?.pagination as Record<string, unknown> | undefined;
@@ -182,5 +238,160 @@ export function mapV1ListResponse(body: Record<string, unknown>): MovieListResul
       ) || 1,
     },
     cdnImageDomain: cdn,
+  };
+}
+
+/**
+ * Map NguồnC (phim.nguonc.com) movie item.
+ */
+export function mapNguonCMovieFromList(raw: Record<string, unknown>): Movie {
+  const posterRaw = safeString(raw?.poster_url);
+  const thumbRaw = safeString(raw?.thumb_url);
+
+  // Nguồn C dùng poster ở field thumb_url
+  const posterUrl = thumbRaw || posterRaw || '/placeholder-poster.jpg';
+  const thumbUrl = posterRaw || thumbRaw || '/placeholder-poster.jpg';
+
+  let categories: Category[] = [];
+  let countries: Country[] = [];
+  let year = safeNumber(raw?.year);
+
+  if (raw?.category) {
+    if (Array.isArray(raw.category)) {
+      categories = raw.category.map((c: any) => mapCategory(c));
+    } else if (typeof raw.category === 'object') {
+      const catObj = raw.category as Record<string, any>;
+      Object.values(catObj).forEach((groupItem: any) => {
+        const groupName = safeString(groupItem?.group?.name);
+        const list = Array.isArray(groupItem?.list) ? groupItem.list : [];
+        if (groupName === 'Thể loại') {
+          categories = list.map((c: any) => ({
+            id: safeString(c?.id),
+            name: safeString(c?.name),
+            slug: safeString(c?.name).toLowerCase().replace(/\s+/g, '-'),
+          }));
+        } else if (groupName === 'Quốc gia') {
+          countries = list.map((c: any) => ({
+            id: safeString(c?.id),
+            name: safeString(c?.name),
+            slug: safeString(c?.name).toLowerCase().replace(/\s+/g, '-'),
+          }));
+        } else if (groupName === 'Năm' && list[0]?.name) {
+          if (!year) year = safeNumber(list[0].name);
+        } else if (!groupName && list.length > 0) {
+          list.forEach((c: any) => {
+            if (c?.name) categories.push(mapCategory(c));
+          });
+        }
+      });
+
+      if (categories.length === 0) {
+        Object.values(catObj).forEach((item: any) => {
+          if (item?.name) categories.push(mapCategory(item));
+        });
+      }
+    }
+  }
+
+  if (countries.length === 0 && Array.isArray(raw?.country)) {
+    countries = raw.country.map((c: any) => mapCountry(c));
+  }
+
+  let actors: string[] = [];
+  if (typeof raw?.casts === 'string' && raw.casts.trim()) {
+    actors = raw.casts.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (Array.isArray(raw?.casts)) {
+    actors = raw.casts.map(String);
+  }
+
+  let directors: string[] = [];
+  if (typeof raw?.director === 'string' && raw.director.trim()) {
+    directors = raw.director.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (Array.isArray(raw?.director)) {
+    directors = raw.director.map(String);
+  }
+
+  return {
+    id: safeString(raw?.id || raw?._id),
+    name: safeString(raw?.name),
+    slug: safeString(raw?.slug),
+    originName: safeString(raw?.original_name || raw?.origin_name),
+    type: (safeString(raw?.type, 'single') as Movie['type']),
+    posterUrl,
+    thumbUrl,
+    year,
+    quality: safeString(raw?.quality, 'HD'),
+    lang: safeString(raw?.language || raw?.lang, 'Vietsub'),
+    episodeCurrent: safeString(raw?.current_episode || raw?.episode_current),
+    episodeTotal: safeString(raw?.total_episodes || raw?.episode_total),
+    time: safeString(raw?.time),
+    description: safeString(raw?.description || raw?.content),
+    categories,
+    countries,
+    actors,
+    directors,
+    tmdbVoteAverage: safeNumber((raw?.tmdb as any)?.vote_average),
+    imdbRating: safeNumber((raw?.imdb as any)?.vote_average),
+    imdbId: safeString((raw?.imdb as any)?.id),
+    imdbVoteCount: safeNumber((raw?.imdb as any)?.vote_count),
+    modifiedTime: safeString(raw?.modified),
+  };
+}
+
+/**
+ * Map NguồnC (phim.nguonc.com) search response.
+ */
+export function mapNguonCListResponse(body: Record<string, unknown>): MovieListResult {
+  const items = Array.isArray(body?.items) ? body.items : [];
+  const paginate = body?.paginate as Record<string, unknown> | undefined;
+
+  return {
+    items: items.map((item: Record<string, unknown>) => mapNguonCMovieFromList(item)),
+    pagination: {
+      totalItems: safeNumber(paginate?.total_items),
+      totalItemsPerPage: safeNumber(paginate?.items_per_page, 20),
+      currentPage: safeNumber(paginate?.current_page, 1),
+      totalPages: safeNumber(paginate?.total_page, 1),
+    },
+    cdnImageDomain: 'https://phim.nguonc.com',
+  };
+}
+
+/**
+ * Map NguồnC (phim.nguonc.com) detail response.
+ */
+export function mapNguonCMovieDetail(movieRaw: Record<string, unknown>): Movie {
+  const base = mapNguonCMovieFromList(movieRaw);
+  const episodesRaw = Array.isArray(movieRaw?.episodes) ? movieRaw.episodes : [];
+  const servers: ServerData[] = episodesRaw.map((server: any) => {
+    let sName = safeString(server?.server_name, 'Vietsub #1');
+    if (!sName.toLowerCase().includes('nguồn c') && !sName.toLowerCase().includes('nguonc')) {
+      sName = `${sName} (Nguồn C)`;
+    }
+    return {
+      serverName: sName,
+          episodes: Array.isArray(server?.items)
+            ? server.items.map((item: any) => {
+                const embedStr = safeString(item?.embed);
+                const m3u8Str = safeString(item?.m3u8);
+                const validM3u8 = m3u8Str.toLowerCase().includes('.m3u8')
+                  ? m3u8Str
+                  : (embedStr.toLowerCase().includes('.m3u8') ? embedStr : '');
+                return {
+                  name: safeString(item?.name),
+                  slug: safeString(item?.slug),
+                  filename: safeString(item?.name),
+                  linkEmbed: embedStr,
+                  linkM3u8: validM3u8,
+                };
+              })
+            : [],
+    };
+  });
+
+  return {
+    ...base,
+    source: 'nguonc',
+    servers,
   };
 }

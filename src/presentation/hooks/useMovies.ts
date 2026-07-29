@@ -16,7 +16,7 @@ import {
   getMovieList,
   getExploreMovies,
 } from '@/application/useCases/MovieUseCases';
-import { Movie } from '@/domain/entities/Movie';
+import { Movie, ServerData } from '@/domain/entities/Movie';
 
 export function useHomeMovies() {
   return useQuery({
@@ -26,22 +26,30 @@ export function useHomeMovies() {
   });
 }
 
-export function useMovieDetails(slug: string, options?: { enabled?: boolean; initialData?: Movie | null }) {
+export function useMovieDetails(
+  slug: string, 
+  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim',
+  options?: { enabled?: boolean; initialData?: Movie | null }
+) {
   return useQuery({
-    queryKey: ['movie-detail', slug],
-    queryFn: () => getMovieDetails(slug),
+    queryKey: ['movie-detail-v3', slug, source],
+    queryFn: () => getMovieDetails(slug, source),
     enabled: !!slug && (options?.enabled ?? true),
     staleTime: 10 * 60 * 1000,
     initialData: options?.initialData ?? undefined,
   });
 }
 
-export function useSearchMovies(keyword: string, page = 1) {
+export function useSearchMovies(
+  keyword: string,
+  page = 1,
+  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+) {
   return useQuery({
-    queryKey: ['search-movies', keyword, page],
-    queryFn: () => searchMovies(keyword, page),
+    queryKey: ['search-movies-v3', keyword, page, source],
+    queryFn: () => searchMovies(keyword, page, source),
     enabled: keyword.length >= 2,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 0,
   });
 }
 
@@ -49,10 +57,14 @@ export function useSearchMovies(keyword: string, page = 1) {
  * Resolve stream link từ movie data đã có — không gọi thêm API.
  * movie phải được lấy từ useMovieDetails trước.
  */
-export function useStreamLink(movie: Movie | undefined, episodeSlug: string) {
+export function useStreamLink(
+  movie: Movie | undefined,
+  episodeSlug: string,
+  serverName?: string
+) {
   return useMemo(
-    () => (movie && episodeSlug ? resolveStreamLink(movie, episodeSlug) : null),
-    [movie, episodeSlug]
+    () => (movie && episodeSlug ? resolveStreamLink(movie, episodeSlug, serverName) : null),
+    [movie, episodeSlug, serverName]
   );
 }
 
@@ -231,33 +243,107 @@ export function useMovieAIAnalysis(movie?: any) {
   });
 }
 
-export function useMovieExtraSources(tmdb?: Movie['tmdb']) {
+function extractM3u8FromEmbed(embedUrl: string, explicitM3u8?: string): string {
+  if (explicitM3u8 && explicitM3u8.includes('.m3u8')) return explicitM3u8;
+  if (!embedUrl) return '';
+  if (embedUrl.includes('.m3u8')) return embedUrl;
+
+  try {
+    const urlObj = new URL(embedUrl);
+    const params = new URLSearchParams(urlObj.search);
+    for (const [, val] of params.entries()) {
+      if (val.includes('.m3u8')) return val;
+    }
+  } catch (e) {}
+
+  return explicitM3u8 || '';
+}
+
+export function useMovieExtraSources(
+  tmdbOrMovie?: Movie['tmdb'] | Movie | null,
+  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+) {
+  const tmdb = (tmdbOrMovie && 'tmdb' in tmdbOrMovie) ? tmdbOrMovie.tmdb : (tmdbOrMovie as Movie['tmdb']);
+  const slug = (tmdbOrMovie && 'slug' in tmdbOrMovie) ? tmdbOrMovie.slug : undefined;
+
   return useQuery({
-    queryKey: ['movie-extra-sources', tmdb?.id],
+    queryKey: ['movie-extra-sources-v3', slug, tmdb?.id, source],
     queryFn: async () => {
-      if (!tmdb?.id) return [];
-      try {
-        const res = await fetch(`https://phimapi.com/tmdb/${tmdb.type}/${tmdb.id}`);
-        if (!res.ok) return [];
-        const data = await res.json();
-        if (data.episodes && Array.isArray(data.episodes)) {
-          return data.episodes.map((s: any) => ({
-            serverName: s.server_name || 'Nguồn Phụ',
-            episodes: s.server_data.map((ep: any) => ({
-              name: ep.name,
-              slug: ep.slug,
-              filename: ep.filename || '',
-              linkEmbed: ep.link_embed || '',
-              linkM3u8: ep.link_m3u8 || ''
-            }))
-          }));
+      if (source !== 'ophim') return [];
+      const extraList: ServerData[] = [];
+
+      // 1. PhimAPI extra m3u8 sources by TMDB ID
+      if (tmdb?.id) {
+        try {
+          const res = await fetch(`https://phimapi.com/tmdb/${tmdb.type}/${tmdb.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.episodes && Array.isArray(data.episodes)) {
+              data.episodes.forEach((s: any) => {
+                let sName = s.server_name || 'Nguồn Phụ';
+                if (!sName.toLowerCase().includes('phimapi') && !sName.toLowerCase().includes('nguồn phụ')) {
+                  sName = `${sName} (Nguồn Phụ - PhimAPI)`;
+                } else if (!sName.toLowerCase().includes('phimapi')) {
+                  sName = `${sName} (PhimAPI)`;
+                }
+                extraList.push({
+                  serverName: sName,
+                  episodes: s.server_data.map((ep: any) => ({
+                    name: ep.name,
+                    slug: ep.slug,
+                    filename: ep.filename || '',
+                    linkEmbed: ep.link_embed || '',
+                    linkM3u8: ep.link_m3u8 || ''
+                  }))
+                });
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching PhimAPI extra sources:', e);
         }
-      } catch (e) {
-        console.error('Error fetching additional movie sources:', e);
       }
-      return [];
+
+      // 2. Nguồn C extra sources by Slug
+      if (slug) {
+        try {
+          const res = await fetch(`https://phim.nguonc.com/api/film/${slug}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.status !== false && data.movie && Array.isArray(data.movie.episodes)) {
+              data.movie.episodes.forEach((s: any) => {
+                let sName = s.server_name || 'Nguồn C';
+                if (!sName.toLowerCase().includes('nguồn c') && !sName.toLowerCase().includes('nguonc')) {
+                  sName = `${sName} (Nguồn C)`;
+                }
+                extraList.push({
+                  serverName: sName,
+                  episodes: Array.isArray(s.items)
+                    ? s.items.map((ep: any) => {
+                        const embedUrl = ep.embed || '';
+                        const explicitM3u8 = ep.m3u8 || '';
+                        const m3u8Url = extractM3u8FromEmbed(embedUrl, explicitM3u8);
+                        return {
+                          name: ep.name || 'Tập 1',
+                          slug: ep.slug || 'tap-1',
+                          filename: ep.name || '',
+                          linkEmbed: embedUrl,
+                          linkM3u8: m3u8Url,
+                        };
+                      })
+                    : []
+                });
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching Nguồn C extra sources:', e);
+        }
+      }
+
+      return extraList;
     },
-    enabled: !!tmdb?.id,
+    enabled: (!!tmdb?.id || !!slug) && source === 'ophim',
     staleTime: 30 * 60 * 1000, // 30 minutes
   });
 }

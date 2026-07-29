@@ -11,6 +11,8 @@ import {
   mapNewlyUpdatedResponse,
   mapV1ListResponse,
   mapMovieDetail,
+  mapNguonCListResponse,
+  mapNguonCMovieDetail,
 } from '@/data/mappers/OPhimMapper';
 
 class MovieRepositoryImpl implements IMovieRepository {
@@ -44,31 +46,176 @@ class MovieRepositoryImpl implements IMovieRepository {
     return mapV1ListResponse(data as any);
   }
 
-  async getMovieDetails(slug: string): Promise<Movie | null> {
+  private async fetchOPhimDetail(slug: string): Promise<Movie | null> {
     try {
-      // Detail page cache ngắn hơn (60s) để episode mới cập nhật sớm hơn
-      const data = await ophimFetch(`/phim/${slug}`, 60) as any;
-      if (!data || data.status === false) return null;
+      const data = (await ophimFetch(`/phim/${slug}`, 60)) as any;
+      if (data && data.status !== false && data.movie) {
+        const movieRaw = data.movie || data;
+        const episodesRaw = data.episodes || [];
+        const cdn = data.pathImage
+          ? data.pathImage.replace(/\/$/, '')
+          : 'https://img.ophim.live/uploads/movies';
 
-      const movieRaw = data.movie || data;
-      const episodesRaw = data.episodes || [];
-      const cdn = data.pathImage
-        ? data.pathImage.replace(/\/$/, '')
-        : 'https://img.ophim.live/uploads/movies';
-
-      return mapMovieDetail(movieRaw, episodesRaw, cdn);
-    } catch {
-      return null;
-    }
+        return mapMovieDetail(movieRaw, episodesRaw, cdn, 'ophim');
+      }
+    } catch {}
+    return null;
   }
 
-  async searchMovies(keyword: string, page = 1): Promise<MovieListResult> {
-    // Search không cache để luôn lấy kết quả mới nhất
-    const data = await ophimFetch(
-      `/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${page}`,
-      0
-    );
-    return mapV1ListResponse(data as any);
+  private async fetchPhimAPIDetail(slug: string): Promise<Movie | null> {
+    try {
+      const res = await fetch(`https://phimapi.com/phim/${slug}`, {
+        next: { revalidate: 60 },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status !== false && data.movie) {
+          const movieRaw = data.movie || data;
+          const episodesRaw = data.episodes || [];
+          const cdn = data.pathImage
+            ? data.pathImage.replace(/\/$/, '')
+            : 'https://phimimg.com/upload/vod';
+          return mapMovieDetail(movieRaw, episodesRaw, cdn, 'phimapi');
+        }
+      }
+    } catch (e) {
+      console.error('[Detail] PhimAPI failed:', e);
+    }
+    return null;
+  }
+
+  private async fetchNguonCDetail(slug: string): Promise<Movie | null> {
+    try {
+      const res = await fetch(`https://phim.nguonc.com/api/film/${slug}`, {
+        next: { revalidate: 60 },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status !== false && data.movie) {
+          return mapNguonCMovieDetail(data.movie);
+        }
+      }
+    } catch (e) {
+      console.error('[Detail] NguồnC failed:', e);
+    }
+    return null;
+  }
+
+  async getMovieDetails(
+    slug: string,
+    source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+  ): Promise<Movie | null> {
+    if (source === 'phimapi') {
+      const res = await this.fetchPhimAPIDetail(slug);
+      if (res) return { ...res, source: 'phimapi' };
+      return null;
+    }
+
+    if (source === 'nguonc') {
+      const res = await this.fetchNguonCDetail(slug);
+      if (res) return { ...res, source: 'nguonc' };
+      return null;
+    }
+
+    // Default: source === 'ophim' (Nguồn chính)
+    const res = await this.fetchOPhimDetail(slug);
+    if (res) return { ...res, source: 'ophim' };
+    const fallbackPhimapi = await this.fetchPhimAPIDetail(slug);
+    if (fallbackPhimapi) return { ...fallbackPhimapi, source: 'phimapi' };
+    const fallbackNguonc = await this.fetchNguonCDetail(slug);
+    if (fallbackNguonc) return { ...fallbackNguonc, source: 'nguonc' };
+
+    return null;
+  }
+
+  async searchMovies(
+    keyword: string,
+    page = 1,
+    source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+  ): Promise<MovieListResult> {
+    if (source === 'nguonc') {
+      try {
+        const res = await fetch(
+          `https://phim.nguonc.com/api/films/search?keyword=${encodeURIComponent(keyword)}&page=${page}`,
+          { cache: 'no-store' }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const mapped = mapNguonCListResponse(data as any);
+          return {
+            ...mapped,
+            items: mapped.items.map((item) => ({ ...item, source: 'nguonc' })),
+          };
+        }
+      } catch (e) {
+        console.error('[Search] NguồnC search failed:', e);
+      }
+      return {
+        items: [],
+        pagination: {
+          totalItems: 0,
+          totalItemsPerPage: 20,
+          currentPage: page,
+          totalPages: 1,
+        },
+        cdnImageDomain: 'https://phim.nguonc.com',
+      };
+    }
+
+    if (source === 'phimapi') {
+      try {
+        const res = await fetch(
+          `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=24&page=${page}`,
+          { cache: 'no-store' }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const mapped = mapV1ListResponse(data as any);
+          return {
+            ...mapped,
+            items: mapped.items.map((item) => ({ ...item, source: 'phimapi' })),
+          };
+        }
+      } catch (e) {
+        console.error('[Search] PhimAPI search failed:', e);
+      }
+      return {
+        items: [],
+        pagination: {
+          totalItems: 0,
+          totalItemsPerPage: 24,
+          currentPage: page,
+          totalPages: 1,
+        },
+        cdnImageDomain: 'https://phimimg.com/upload/vod',
+      };
+    }
+
+    // Default: OPhim (Nguồn chính)
+    try {
+      const data = await ophimFetch(
+        `/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${page}`,
+        0
+      );
+      const mapped = mapV1ListResponse(data as any);
+      return {
+        ...mapped,
+        items: mapped.items.map((item) => ({ ...item, source: 'ophim' })),
+      };
+    } catch (e) {
+      console.error('[Search] OPhim search failed:', e);
+    }
+
+    return {
+      items: [],
+      pagination: {
+        totalItems: 0,
+        totalItemsPerPage: 24,
+        currentPage: page,
+        totalPages: 1,
+      },
+      cdnImageDomain: 'https://img.ophim.live',
+    };
   }
 
   private buildFilterUrl(

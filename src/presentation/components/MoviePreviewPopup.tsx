@@ -142,7 +142,7 @@ export default function MoviePreviewPopup({ movie, rect, onClose, onMouseEnter, 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Link 
-                href={`/phim/${movie.slug}`}
+                href={`/phim/${movie.slug}${movie.source ? `?source=${movie.source}` : ''}`}
                 className="w-14 h-14 rounded-full bg-white flex items-center justify-center hover:bg-zinc-200 transition-all hover:scale-110 active:scale-95 shadow-xl"
               >
                 <Play className="w-8 h-8 text-black fill-black ml-1" />
@@ -164,7 +164,7 @@ export default function MoviePreviewPopup({ movie, rect, onClose, onMouseEnter, 
               </button>
             </div>
             <Link 
-              href={`/phim/${movie.slug}`}
+              href={`/phim/${movie.slug}${movie.source ? `?source=${movie.source}` : ''}`}
               className="w-12 h-12 rounded-full border-2 border-zinc-500 flex items-center justify-center hover:border-white transition-all hover:scale-110 text-white"
             >
               <ChevronDown className="w-6 h-6" />

@@ -6,13 +6,16 @@ import { DetailSkeleton } from '@/presentation/components/Skeleton';
 
 interface Props {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ source?: string }>;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
+  const { source } = await searchParams;
+  const sourceParam = (source as 'ophim' | 'phimapi' | 'nguonc') || 'ophim';
 
   try {
-    const movie = await getMovieDetails(slug);
+    const movie = await getMovieDetails(slug, sourceParam);
     if (!movie) return { title: 'Không tìm thấy phim' };
 
     return {
@@ -27,14 +30,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default async function MovieDetailPage({ params }: Props) {
+export default async function MovieDetailPage({ params, searchParams }: Props) {
   const { slug } = await params;
-  // Fetch một lần ở server — Next.js tự deduplicate với generateMetadata (same request)
-  const movie = await getMovieDetails(slug);
+  const { source } = await searchParams;
+  const sourceParam = (source as 'ophim' | 'phimapi' | 'nguonc') || 'ophim';
+  const movie = await getMovieDetails(slug, sourceParam);
 
   return (
     <Suspense fallback={<DetailSkeleton />}>
-      <MovieDetailClient slug={slug} initialMovie={movie} />
+      <MovieDetailClient slug={slug} initialMovie={movie} sourceParam={sourceParam} />
     </Suspense>
   );
 }

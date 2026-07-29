@@ -11,11 +11,14 @@ interface MovieCardProps {
   movie: Movie;
   index?: number;
   className?: string;
+  source?: 'ophim' | 'phimapi' | 'nguonc';
 }
 
-const MovieCard = memo(({ movie, index = 0, className }: MovieCardProps) => {
+const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: MovieCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
-  const imageSrc = movie.thumbUrl || movie.posterUrl;
+  const imageSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.jpg';
+  const effectiveSource = movie.source || propsSource;
+  const href = `/phim/${movie.slug}${effectiveSource ? `?source=${effectiveSource}` : ''}`;
 
   return (
     <div
@@ -27,7 +30,7 @@ const MovieCard = memo(({ movie, index = 0, className }: MovieCardProps) => {
         className || 'w-full'
       )}
     >
-      <Link href={`/phim/${movie.slug}`} className="block">
+      <Link href={href} className="block">
         <div className="relative w-full aspect-[2/3] overflow-hidden">
           <Image
             src={imageSrc}
