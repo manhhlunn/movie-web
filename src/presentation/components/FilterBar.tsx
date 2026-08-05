@@ -26,9 +26,6 @@ export default function FilterBar({ currentType, currentSlug }: FilterBarProps) 
     { name: 'Phim Vietsub', slug: 'phim-vietsub' },
     { name: 'Phim Thuyết Minh', slug: 'phim-thuyet-minh' },
     { name: 'Phim Lồng Tiếng', slug: 'phim-long-tieng' },
-    { name: 'Phim Đang Chiếu', slug: 'phim-bo-dang-chieu' },
-    { name: 'Phim Hoàn Thành', slug: 'phim-bo-hoan-thanh' },
-    { name: 'Phim Sắp Chiếu', slug: 'phim-sap-chieu' },
     { name: 'Subteam', slug: 'subteam' },
     { name: 'Phim Chiếu Rạp', slug: 'phim-chieu-rap' },
   ];

@@ -24,9 +24,6 @@ const MORE_LINKS = [
   { href: '/danh-sach/phim-vietsub', label: 'Phim Vietsub' },
   { href: '/danh-sach/phim-thuyet-minh', label: 'Phim Thuyết Minh' },
   { href: '/danh-sach/phim-long-tieng', label: 'Phim Lồng Tiếng' },
-  { href: '/danh-sach/phim-bo-dang-chieu', label: 'Phim Đang Chiếu' },
-  { href: '/danh-sach/phim-bo-hoan-thanh', label: 'Phim Hoàn Thành' },
-  { href: '/danh-sach/phim-sap-chieu', label: 'Phim Sắp Chiếu' },
   { href: '/danh-sach/subteam', label: 'Subteam' },
 ];
 

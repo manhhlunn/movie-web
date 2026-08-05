@@ -18,9 +18,6 @@ const TITLES: Record<string, string> = {
   'phim-vietsub': 'Phim Vietsub',
   'phim-thuyet-minh': 'Phim Thuyết Minh',
   'phim-long-tieng': 'Phim Lồng Tiếng',
-  'phim-bo-dang-chieu': 'Phim Đang Chiếu',
-  'phim-bo-hoan-thanh': 'Phim Hoàn Thành',
-  'phim-sap-chieu': 'Phim Sắp Chiếu',
   'subteam': 'Subteam',
 };
 
