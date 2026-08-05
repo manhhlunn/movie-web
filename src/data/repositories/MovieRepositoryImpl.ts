@@ -297,6 +297,19 @@ class MovieRepositoryImpl implements IMovieRepository {
       return this.getNewlyUpdated(page);
     }
 
+    // Direct fallback for language lists on PhimAPI
+    if (listSlug === 'phim-vietsub' || listSlug === 'phim-thuyet-minh' || listSlug === 'phim-long-tieng') {
+      try {
+        const res = await fetch(`https://phimapi.com/v1/api/danh-sach/${listSlug}?page=${page}`, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status !== false && data.data?.items?.length > 0) {
+            return mapV1ListResponse(data as any);
+          }
+        }
+      } catch (e) {}
+    }
+
     try {
       let url = `/v1/api/danh-sach/${listSlug}?page=${page}`;
       if (filters) {
@@ -305,15 +318,34 @@ class MovieRepositoryImpl implements IMovieRepository {
         if (filters.year) url += `&year=${filters.year}`;
       }
       const data = await ophimFetch(url);
-      return mapV1ListResponse(data as any);
+      const mapped = mapV1ListResponse(data as any);
+      if (mapped.items && mapped.items.length > 0) return mapped;
     } catch (e) {
-      console.error('[getMoviesByList] Failed:', e);
-      return {
-        items: [],
-        pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
-        cdnImageDomain: 'https://img.ophim.live',
-      };
+      console.error('[getMoviesByList] OPhim Failed:', e);
     }
+
+    // Try PhimAPI fallback if OPhim returns 0 items or fails
+    try {
+      let url = `https://phimapi.com/v1/api/danh-sach/${listSlug}?page=${page}`;
+      if (filters) {
+        if (filters.category) url += `&category=${filters.category}`;
+        if (filters.country) url += `&country=${filters.country}`;
+        if (filters.year) url += `&year=${filters.year}`;
+      }
+      const res = await fetch(url, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status !== false) {
+          return mapV1ListResponse(data as any);
+        }
+      }
+    } catch (e) {}
+
+    return {
+      items: [],
+      pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
+      cdnImageDomain: 'https://img.ophim.live',
+    };
   }
 
   async getCategoryList(): Promise<import('@/domain/entities/Movie').FilterOption[]> {
