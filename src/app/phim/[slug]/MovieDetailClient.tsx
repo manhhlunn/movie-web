@@ -49,10 +49,10 @@ export default function MovieDetailClient({
 }: {
   slug: string;
   initialMovie?: Movie | null;
-  sourceParam?: 'ophim' | 'phimapi' | 'nguonc';
+  sourceParam?: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov';
 }) {
   const searchParams = useSearchParams();
-  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc') || propSource || initialMovie?.source || 'ophim';
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || propSource || initialMovie?.source || 'ophim';
 
   const { data: movie, isLoading, isError } = useMovieDetails(slug, sourceParam, { initialData: initialMovie });
   const { data: extraSources } = useMovieExtraSources(movie, sourceParam);

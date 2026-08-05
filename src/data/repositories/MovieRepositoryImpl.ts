@@ -13,6 +13,8 @@ import {
   mapMovieDetail,
   mapNguonCListResponse,
   mapNguonCMovieDetail,
+  mapVsmovListResponse,
+  mapVsmovMovieDetail,
 } from '@/data/mappers/OPhimMapper';
 
 class MovieRepositoryImpl implements IMovieRepository {
@@ -101,9 +103,26 @@ class MovieRepositoryImpl implements IMovieRepository {
     return null;
   }
 
+  private async fetchVsmovDetail(slug: string): Promise<Movie | null> {
+    try {
+      const res = await fetch(`https://vsmov.com/api/phim/${slug}`, {
+        next: { revalidate: 60 },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status !== false) {
+          return mapVsmovMovieDetail(data);
+        }
+      }
+    } catch (e) {
+      console.error('[Detail] VSMOV failed:', e);
+    }
+    return null;
+  }
+
   async getMovieDetails(
     slug: string,
-    source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+    source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
   ): Promise<Movie | null> {
     if (source === 'phimapi') {
       const res = await this.fetchPhimAPIDetail(slug);
@@ -117,6 +136,12 @@ class MovieRepositoryImpl implements IMovieRepository {
       return null;
     }
 
+    if (source === 'vsmov') {
+      const res = await this.fetchVsmovDetail(slug);
+      if (res) return { ...res, source: 'vsmov' };
+      return null;
+    }
+
     // Default: source === 'ophim' (Nguồn chính)
     const res = await this.fetchOPhimDetail(slug);
     if (res) return { ...res, source: 'ophim' };
@@ -124,6 +149,8 @@ class MovieRepositoryImpl implements IMovieRepository {
     if (fallbackPhimapi) return { ...fallbackPhimapi, source: 'phimapi' };
     const fallbackNguonc = await this.fetchNguonCDetail(slug);
     if (fallbackNguonc) return { ...fallbackNguonc, source: 'nguonc' };
+    const fallbackVsmov = await this.fetchVsmovDetail(slug);
+    if (fallbackVsmov) return { ...fallbackVsmov, source: 'vsmov' };
 
     return null;
   }
@@ -131,8 +158,37 @@ class MovieRepositoryImpl implements IMovieRepository {
   async searchMovies(
     keyword: string,
     page = 1,
-    source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+    source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
   ): Promise<MovieListResult> {
+    if (source === 'vsmov') {
+      try {
+        const res = await fetch(
+          `https://vsmov.com/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=24&page=${page}`,
+          { cache: 'no-store' }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const mapped = mapVsmovListResponse(data as any);
+          return {
+            ...mapped,
+            items: mapped.items.map((item: any) => ({ ...item, source: 'vsmov' as const })),
+          };
+        }
+      } catch (e) {
+        console.error('[Search] VSMOV search failed:', e);
+      }
+      return {
+        items: [],
+        pagination: {
+          totalItems: 0,
+          totalItemsPerPage: 24,
+          currentPage: page,
+          totalPages: 1,
+        },
+        cdnImageDomain: 'https://vsmov.com',
+      };
+    }
+
     if (source === 'nguonc') {
       try {
         const res = await fetch(

@@ -370,28 +370,140 @@ export function mapNguonCMovieDetail(movieRaw: Record<string, unknown>): Movie {
     }
     return {
       serverName: sName,
-          episodes: Array.isArray(server?.items)
-            ? server.items.map((item: any) => {
-                const embedStr = safeString(item?.embed);
-                const m3u8Str = safeString(item?.m3u8);
-                const validM3u8 = m3u8Str.toLowerCase().includes('.m3u8')
-                  ? m3u8Str
-                  : (embedStr.toLowerCase().includes('.m3u8') ? embedStr : '');
-                return {
-                  name: safeString(item?.name),
-                  slug: safeString(item?.slug),
-                  filename: safeString(item?.name),
-                  linkEmbed: embedStr,
-                  linkM3u8: validM3u8,
-                };
-              })
-            : [],
+      episodes: Array.isArray(server?.items)
+        ? server.items.map((item: any) => {
+            const embedStr = safeString(item?.embed);
+            const m3u8Str = safeString(item?.m3u8);
+            const validM3u8 = m3u8Str.toLowerCase().includes('.m3u8')
+              ? m3u8Str
+              : (embedStr.toLowerCase().includes('.m3u8') ? embedStr : '');
+            return {
+              name: safeString(item?.name),
+              slug: safeString(item?.slug),
+              filename: safeString(item?.name),
+              linkEmbed: embedStr,
+              linkM3u8: validM3u8,
+            };
+          })
+        : [],
     };
   });
 
   return {
     ...base,
     source: 'nguonc',
+    servers,
+  };
+}
+
+/**
+ * Extract m3u8 stream URL from VSMOV video embed URL.
+ * e.g., https://v6.streamvsmov.com/video/3c499dca -> https://v6.streamvsmov.com/stream/3c499dca/master.m3u8
+ */
+export function extractVsmovM3u8(embedUrl: string): string {
+  if (!embedUrl) return '';
+  if (embedUrl.includes('.m3u8')) return embedUrl;
+
+  if (embedUrl.includes('/video/')) {
+    const cleanUrl = embedUrl.replace(/\/$/, '');
+    return `${cleanUrl.replace('/video/', '/stream/')}/master.m3u8`;
+  }
+
+  return '';
+}
+
+export function mapVsmovMovieFromList(raw: Record<string, unknown>): Movie {
+  const categories = Array.isArray(raw?.category)
+    ? raw.category.map((c: Record<string, unknown>) => mapCategory(c))
+    : [];
+  const countries = Array.isArray(raw?.country)
+    ? raw.country.map((c: Record<string, unknown>) => mapCountry(c))
+    : [];
+
+  return {
+    id: safeString(raw?._id),
+    name: safeString(raw?.name),
+    slug: safeString(raw?.slug),
+    originName: safeString(raw?.origin_name),
+    type: (safeString(raw?.type, 'single') as Movie['type']),
+    posterUrl: safeString(raw?.thumb_url || raw?.poster_url),
+    thumbUrl: safeString(raw?.poster_url || raw?.thumb_url),
+    year: safeNumber(raw?.year),
+    quality: safeString(raw?.quality, 'HD'),
+    lang: safeString(raw?.lang, 'Vietsub'),
+    episodeCurrent: safeString(raw?.episode_current),
+    episodeTotal: safeString(raw?.episode_total),
+    time: safeString(raw?.time),
+    description: safeString(raw?.content || raw?.description),
+    categories,
+    countries,
+    actors: Array.isArray(raw?.actor) ? raw.actor.map(String) : [],
+    directors: Array.isArray(raw?.director) ? raw.director.map(String) : [],
+    tmdbVoteAverage: safeNumber((raw?.tmdb as Record<string, unknown>)?.vote_average),
+    imdbRating: safeNumber((raw?.imdb as Record<string, unknown>)?.vote_average),
+    imdbId: safeString((raw?.imdb as Record<string, unknown>)?.id),
+    imdbVoteCount: safeNumber((raw?.imdb as Record<string, unknown>)?.vote_count),
+    source: 'vsmov',
+  };
+}
+
+/**
+ * Map VSMOV (vsmov.com) search response.
+ */
+export function mapVsmovListResponse(body: Record<string, unknown>): MovieListResult {
+  const items = Array.isArray(body?.items) ? body.items : [];
+  const pagination = body?.pagination as Record<string, unknown> | undefined;
+
+  return {
+    items: items.map((item: Record<string, unknown>) => mapVsmovMovieFromList(item)),
+    pagination: {
+      totalItems: safeNumber(pagination?.totalItems),
+      totalItemsPerPage: safeNumber(pagination?.totalItemsPerPage, 20),
+      currentPage: safeNumber(pagination?.currentPage, 1),
+      totalPages: safeNumber(pagination?.totalPages, 1),
+    },
+    cdnImageDomain: 'https://vsmov.com',
+  };
+}
+
+/**
+ * Map VSMOV (vsmov.com) detail response.
+ */
+export function mapVsmovMovieDetail(body: Record<string, unknown>): Movie | null {
+  const movieRaw = body?.movie as Record<string, unknown> | undefined;
+  if (!movieRaw) return null;
+
+  const base = mapVsmovMovieFromList(movieRaw);
+  const episodesRaw = Array.isArray(body?.episodes) ? body.episodes : [];
+
+  const servers: ServerData[] = episodesRaw.map((server: any) => {
+    let sName = safeString(server?.server_name, 'VSMOV #1').replace(/[\r\n]+/g, ' ').trim();
+    if (!sName.toLowerCase().includes('vsmov') && !sName.toLowerCase().includes('nguồn 4')) {
+      sName = `${sName} (VSMOV)`;
+    }
+    const serverEpisodes = Array.isArray(server?.server_data) ? server.server_data : [];
+
+    return {
+      serverName: sName,
+      episodes: serverEpisodes.map((item: any) => {
+        const embedStr = safeString(item?.link_embed);
+        const m3u8Str = safeString(item?.link_m3u8);
+        const validM3u8 = m3u8Str;
+
+        return {
+          name: safeString(item?.name, 'Tập 1'),
+          slug: safeString(item?.slug, 'tap-1'),
+          filename: safeString(item?.filename || item?.name),
+          linkEmbed: embedStr,
+          linkM3u8: validM3u8,
+        };
+      }),
+    };
+  });
+
+  return {
+    ...base,
+    source: 'vsmov',
     servers,
   };
 }

@@ -17,6 +17,7 @@ import {
   getExploreMovies,
 } from '@/application/useCases/MovieUseCases';
 import { Movie, ServerData } from '@/domain/entities/Movie';
+import { extractVsmovM3u8 } from '@/data/mappers/OPhimMapper';
 
 export function useHomeMovies() {
   return useQuery({
@@ -28,7 +29,7 @@ export function useHomeMovies() {
 
 export function useMovieDetails(
   slug: string, 
-  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim',
+  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim',
   options?: { enabled?: boolean; initialData?: Movie | null }
 ) {
   return useQuery({
@@ -43,7 +44,7 @@ export function useMovieDetails(
 export function useSearchMovies(
   keyword: string,
   page = 1,
-  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
 ) {
   return useQuery({
     queryKey: ['search-movies-v3', keyword, page, source],
@@ -261,14 +262,14 @@ function extractM3u8FromEmbed(embedUrl: string, explicitM3u8?: string): string {
 
 export function useMovieExtraSources(
   tmdbOrMovie?: Movie['tmdb'] | Movie | null,
-  source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
+  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
 ) {
   const tmdb = (tmdbOrMovie && 'tmdb' in tmdbOrMovie) ? tmdbOrMovie.tmdb : (tmdbOrMovie as Movie['tmdb']);
   const imdbId = (tmdbOrMovie && 'imdbId' in tmdbOrMovie) ? tmdbOrMovie.imdbId : undefined;
   const slug = (tmdbOrMovie && 'slug' in tmdbOrMovie) ? tmdbOrMovie.slug : undefined;
 
   return useQuery({
-    queryKey: ['movie-extra-sources-v4', slug, tmdb?.id, imdbId, source],
+    queryKey: ['movie-extra-sources-v5', slug, tmdb?.id, imdbId, source],
     queryFn: async () => {
       if (source !== 'ophim') return [];
       const extraList: ServerData[] = [];
@@ -376,6 +377,42 @@ export function useMovieExtraSources(
           }
         } catch (e) {
           console.error('Error fetching Nguồn C extra sources:', e);
+        }
+      }
+
+      // 4. VSMOV extra sources by Slug (Nguồn 4)
+      if (slug) {
+        try {
+          const res = await fetch(`https://vsmov.com/api/phim/${slug}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.status !== false && Array.isArray(data.episodes)) {
+              data.episodes.forEach((s: any) => {
+                let sName = (s.server_name || 'VSMOV').replace(/[\r\n]+/g, ' ').trim();
+                if (!sName.toLowerCase().includes('vsmov') && !sName.toLowerCase().includes('nguồn 4')) {
+                  sName = `${sName} (VSMOV)`;
+                }
+                const serverEpisodes = Array.isArray(s.server_data) ? s.server_data : [];
+                extraList.push({
+                  serverName: sName,
+                  episodes: serverEpisodes.map((ep: any) => {
+                    const embedUrl = ep.link_embed || '';
+                    const explicitM3u8 = ep.link_m3u8 || '';
+                    const m3u8Url = explicitM3u8;
+                    return {
+                      name: ep.name || 'Tập 1',
+                      slug: ep.slug || 'tap-1',
+                      filename: ep.filename || ep.name || '',
+                      linkEmbed: embedUrl,
+                      linkM3u8: m3u8Url,
+                    };
+                  })
+                });
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching VSMOV extra sources:', e);
         }
       }
 

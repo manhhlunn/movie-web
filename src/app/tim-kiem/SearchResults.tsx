@@ -13,23 +13,29 @@ export default function SearchResults() {
   const router = useRouter();
   const keyword = searchParams.get('keyword') || '';
   const pageStr = searchParams.get('page') || '1';
-  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc') || 'ophim';
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || 'ophim';
   const page = parseInt(pageStr, 10);
 
-  const [activeTab, setActiveTab] = useState<'ophim' | 'phimapi' | 'nguonc'>(
-    sourceParam === 'phimapi' ? 'phimapi' : sourceParam === 'nguonc' ? 'nguonc' : 'ophim'
+  const [activeTab, setActiveTab] = useState<'ophim' | 'phimapi' | 'nguonc' | 'vsmov'>(
+    sourceParam === 'phimapi'
+      ? 'phimapi'
+      : sourceParam === 'nguonc'
+      ? 'nguonc'
+      : sourceParam === 'vsmov'
+      ? 'vsmov'
+      : 'ophim'
   );
 
   // Sync state if source query parameter in URL changes
   useEffect(() => {
-    if (sourceParam === 'phimapi' || sourceParam === 'ophim' || sourceParam === 'nguonc') {
+    if (sourceParam === 'phimapi' || sourceParam === 'ophim' || sourceParam === 'nguonc' || sourceParam === 'vsmov') {
       setActiveTab(sourceParam);
     }
   }, [sourceParam]);
 
   const { data, isLoading, isError } = useSearchMovies(keyword, page, activeTab);
 
-  const handleTabChange = (tab: 'ophim' | 'phimapi' | 'nguonc') => {
+  const handleTabChange = (tab: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') => {
     setActiveTab(tab);
     const newParams = new URLSearchParams(searchParams.toString());
     newParams.set('source', tab);
@@ -45,10 +51,11 @@ export default function SearchResults() {
     );
   }
 
-  const getSourceLabel = (src: 'ophim' | 'phimapi' | 'nguonc') => {
+  const getSourceLabel = (src: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') => {
     if (src === 'ophim') return 'Nguồn Chính (OPhim)';
     if (src === 'phimapi') return 'Nguồn Phụ (PhimAPI)';
-    return 'Nguồn 3 (Nguồn C)';
+    if (src === 'nguonc') return 'Nguồn 3 (Nguồn C)';
+    return 'Nguồn 4 (VSMOV)';
   };
 
   return (
@@ -89,6 +96,18 @@ export default function SearchResults() {
         >
           <Globe className="w-4 h-4" />
           <span>Nguồn 3 (Nguồn C)</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('vsmov')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'vsmov'
+              ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
+              : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800'
+          }`}
+        >
+          <Globe className="w-4 h-4" />
+          <span>Nguồn 4 (VSMOV)</span>
         </button>
       </div>
 

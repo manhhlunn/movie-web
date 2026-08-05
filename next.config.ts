@@ -66,6 +66,14 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "nguonc.com",
       },
+      {
+        protocol: "https",
+        hostname: "vsmov.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.vsmov.com",
+      },
     ],
   },
 };

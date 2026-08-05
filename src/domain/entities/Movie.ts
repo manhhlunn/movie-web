@@ -71,7 +71,7 @@ export interface Movie {
   /** Last modified timestamp */
   modifiedTime?: string;
   /** Primary source tag */
-  source?: 'ophim' | 'phimapi' | 'nguonc';
+  source?: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov';
   /** Watch progress fields */
   lastEpisodeSlug?: string;
   lastTime?: number;
