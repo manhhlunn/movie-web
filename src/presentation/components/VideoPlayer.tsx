@@ -1084,14 +1084,27 @@ function VideoPreview({ url, time }: { url: string; time: number }) {
 
 function IframePlayer({ url, title }: { url: string; title?: string }) {
   return (
-    <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden">
+    <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden group">
       <iframe
         src={url}
         title={title || 'Video player'}
         className="w-full h-full border-0"
         allowFullScreen
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerPolicy="no-referrer-when-downgrade"
       />
+      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 pointer-events-auto">
+        <span className="font-medium text-zinc-400">Nguồn Iframe</span>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-red-400 hover:text-red-300 font-bold ml-1 transition-colors"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          <span>Mở tab mới</span>
+        </a>
+      </div>
     </div>
   );
 }

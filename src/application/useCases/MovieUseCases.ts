@@ -59,6 +59,22 @@ export interface StreamInfo {
  * Resolve stream link từ movie object đã có sẵn (không fetch lại).
  * Dùng khi đã có movie data từ useMovieDetails.
  */
+function matchEpisodeSlug(epSlug: string, epName: string, targetSlug: string): boolean {
+  const s1 = (epSlug || '').toLowerCase().trim();
+  const s2 = (epName || '').toLowerCase().trim();
+  const t = (targetSlug || '').toLowerCase().trim();
+
+  if (s1 === t || s2 === t) return true;
+  if (`tap-${s1}` === t || s1 === `tap-${t}`) return true;
+  if (`tap-${s2}` === t || s2 === `tap-${t}`) return true;
+
+  const cleanS1 = s1.replace(/^tap-/, '');
+  const cleanT = t.replace(/^tap-/, '');
+  if (cleanS1 && cleanS1 === cleanT) return true;
+
+  return false;
+}
+
 export function resolveStreamLink(
   movie: Movie,
   episodeSlug: string,
@@ -70,19 +86,14 @@ export function resolveStreamLink(
   if (serverName) {
     const targetServer = movie.servers.find((s) => s.serverName === serverName);
     if (targetServer) {
-      const ep = targetServer.episodes.find(
-        (e) =>
-          e.slug === episodeSlug ||
-          e.name === episodeSlug ||
-          e.slug === `tap-${episodeSlug}` ||
-          `tap-${e.slug}` === episodeSlug
-      );
+      const ep = targetServer.episodes.find((e) => matchEpisodeSlug(e.slug, e.name, episodeSlug));
       if (ep) {
         return {
           linkM3u8: ep.linkM3u8 || '',
           linkEmbed: ep.linkEmbed || '',
           episodeName: ep.name || ep.filename,
           movieName: movie.name,
+          serverName: targetServer.serverName,
           movie,
         };
       }
@@ -91,19 +102,14 @@ export function resolveStreamLink(
 
   // 2. Find episode by slug across all servers
   for (const server of movie.servers) {
-    const episode = server.episodes.find(
-      (ep) =>
-        ep.slug === episodeSlug ||
-        ep.name === episodeSlug ||
-        ep.slug === `tap-${episodeSlug}` ||
-        `tap-${ep.slug}` === episodeSlug
-    );
+    const episode = server.episodes.find((ep) => matchEpisodeSlug(ep.slug, ep.name, episodeSlug));
     if (episode) {
       return {
         linkM3u8: episode.linkM3u8 || '',
         linkEmbed: episode.linkEmbed || '',
         episodeName: episode.name || episode.filename,
         movieName: movie.name,
+        serverName: server.serverName,
         movie,
       };
     }
@@ -124,10 +130,25 @@ export function resolveStreamLink(
           linkEmbed: episode.linkEmbed || '',
           episodeName: episode.name || episode.filename,
           movieName: movie.name,
+          serverName: server.serverName,
           movie,
         };
       }
     }
+  }
+
+  // 4. Ultimate fallback: Return first episode of specified or first server
+  const fallbackServer = serverName ? movie.servers.find((s) => s.serverName === serverName) || movie.servers[0] : movie.servers[0];
+  if (fallbackServer && fallbackServer.episodes.length > 0) {
+    const ep = fallbackServer.episodes[0];
+    return {
+      linkM3u8: ep.linkM3u8 || '',
+      linkEmbed: ep.linkEmbed || '',
+      episodeName: ep.name || ep.filename,
+      movieName: movie.name,
+      serverName: fallbackServer.serverName,
+      movie,
+    };
   }
 
   return null;
