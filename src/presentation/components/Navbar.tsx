@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
   { href: '/', label: 'Trang chủ' },
-  { href: '/danh-sach/phim-moi-cap-nhat', label: 'Phim mới' },
+  { href: '/danh-sach/phim-moi', label: 'Phim mới' },
   { href: '/danh-sach/phim-le', label: 'Phim lẻ' },
   { href: '/danh-sach/phim-bo', label: 'Phim bộ' },
   { href: '/danh-sach/phim-chieu-rap', label: 'Chiếu rạp' },

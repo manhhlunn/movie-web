@@ -293,8 +293,19 @@ class MovieRepositoryImpl implements IMovieRepository {
     page = 1,
     filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    if (listSlug === 'phim-moi-cap-nhat' || listSlug === 'phim-moi') {
+    if (listSlug === 'phim-moi-cap-nhat') {
       return this.getNewlyUpdated(page);
+    }
+
+    if (listSlug === 'phim-moi') {
+      try {
+        const url = this.buildFilterUrl(`/v1/api/danh-sach/phim-moi?page=${page}`, filters);
+        const data = await ophimFetch(url);
+        const mapped = mapV1ListResponse(data as any);
+        if (mapped.items && mapped.items.length > 0) return mapped;
+      } catch (e) {
+        return this.getNewlyUpdated(page);
+      }
     }
 
     // Direct fallback for language lists on PhimAPI

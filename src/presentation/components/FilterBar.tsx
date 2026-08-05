@@ -18,7 +18,7 @@ export default function FilterBar({ currentType, currentSlug }: FilterBarProps) 
   const [isOpen, setIsOpen] = useState(false);
 
   const defaultTypes = [
-    { name: 'Phim Mới', slug: 'phim-moi-cap-nhat' },
+    { name: 'Phim Mới', slug: 'phim-moi' },
     { name: 'Phim Bộ', slug: 'phim-bo' },
     { name: 'Phim Lẻ', slug: 'phim-le' },
     { name: 'TV Shows', slug: 'tv-shows' },
