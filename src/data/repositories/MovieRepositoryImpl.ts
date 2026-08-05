@@ -236,9 +236,18 @@ class MovieRepositoryImpl implements IMovieRepository {
     page = 1,
     filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    const url = this.buildFilterUrl(`/v1/api/the-loai/${categorySlug}?page=${page}`, filters);
-    const data = await ophimFetch(url);
-    return mapV1ListResponse(data as any);
+    try {
+      const url = this.buildFilterUrl(`/v1/api/the-loai/${categorySlug}?page=${page}`, filters);
+      const data = await ophimFetch(url);
+      return mapV1ListResponse(data as any);
+    } catch (e) {
+      console.error('[getMoviesByCategory] Failed:', e);
+      return {
+        items: [],
+        pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
+        cdnImageDomain: 'https://img.ophim.live',
+      };
+    }
   }
 
   async getMoviesByCountry(
@@ -246,9 +255,18 @@ class MovieRepositoryImpl implements IMovieRepository {
     page = 1,
     filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    const url = this.buildFilterUrl(`/v1/api/quoc-gia/${countrySlug}?page=${page}`, filters);
-    const data = await ophimFetch(url);
-    return mapV1ListResponse(data as any);
+    try {
+      const url = this.buildFilterUrl(`/v1/api/quoc-gia/${countrySlug}?page=${page}`, filters);
+      const data = await ophimFetch(url);
+      return mapV1ListResponse(data as any);
+    } catch (e) {
+      console.error('[getMoviesByCountry] Failed:', e);
+      return {
+        items: [],
+        pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
+        cdnImageDomain: 'https://img.ophim.live',
+      };
+    }
   }
 
   async getMoviesByYear(
@@ -256,9 +274,18 @@ class MovieRepositoryImpl implements IMovieRepository {
     page = 1,
     filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    const url = this.buildFilterUrl(`/v1/api/nam-phat-hanh/${year}?page=${page}`, filters);
-    const data = await ophimFetch(url);
-    return mapV1ListResponse(data as any);
+    try {
+      const url = this.buildFilterUrl(`/v1/api/nam-phat-hanh/${year}?page=${page}`, filters);
+      const data = await ophimFetch(url);
+      return mapV1ListResponse(data as any);
+    } catch (e) {
+      console.error('[getMoviesByYear] Failed:', e);
+      return {
+        items: [],
+        pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
+        cdnImageDomain: 'https://img.ophim.live',
+      };
+    }
   }
 
   async getMoviesByList(
@@ -266,14 +293,27 @@ class MovieRepositoryImpl implements IMovieRepository {
     page = 1,
     filters?: { category?: string; country?: string; year?: string }
   ): Promise<MovieListResult> {
-    let url = `/v1/api/danh-sach/${listSlug}?page=${page}`;
-    if (filters) {
-      if (filters.category) url += `&category=${filters.category}`;
-      if (filters.country) url += `&country=${filters.country}`;
-      if (filters.year) url += `&year=${filters.year}`;
+    if (listSlug === 'phim-moi-cap-nhat' || listSlug === 'phim-moi') {
+      return this.getNewlyUpdated(page);
     }
-    const data = await ophimFetch(url);
-    return mapV1ListResponse(data as any);
+
+    try {
+      let url = `/v1/api/danh-sach/${listSlug}?page=${page}`;
+      if (filters) {
+        if (filters.category) url += `&category=${filters.category}`;
+        if (filters.country) url += `&country=${filters.country}`;
+        if (filters.year) url += `&year=${filters.year}`;
+      }
+      const data = await ophimFetch(url);
+      return mapV1ListResponse(data as any);
+    } catch (e) {
+      console.error('[getMoviesByList] Failed:', e);
+      return {
+        items: [],
+        pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
+        cdnImageDomain: 'https://img.ophim.live',
+      };
+    }
   }
 
   async getCategoryList(): Promise<import('@/domain/entities/Movie').FilterOption[]> {
