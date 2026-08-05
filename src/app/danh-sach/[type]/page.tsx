@@ -10,7 +10,6 @@ interface Props {
 
 const TITLES: Record<string, string> = {
   'phim-moi': 'Phim Mới',
-  'phim-moi-cap-nhat': 'Phim Mới Cập Nhật',
   'phim-le': 'Phim Lẻ',
   'phim-bo': 'Phim Bộ',
   'hoat-hinh': 'Phim Hoạt Hình',
