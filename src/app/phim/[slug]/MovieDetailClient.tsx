@@ -414,8 +414,8 @@ export default function MovieDetailClient({
               <div>
                 <span className="text-zinc-500 block mb-1">Thể loại</span>
                 <div className="flex flex-wrap gap-2">
-                  {movie.categories?.map((cat) => (
-                    <span key={cat.id} className="text-sm text-zinc-300">
+                  {movie.categories?.map((cat, idx) => (
+                    <span key={cat.id || cat.slug || cat.name || idx} className="text-sm text-zinc-300">
                       {cat.name}
                     </span>
                   ))}
@@ -424,8 +424,8 @@ export default function MovieDetailClient({
               <div>
                 <span className="text-zinc-500 block mb-1">Quốc gia</span>
                 <div className="flex flex-wrap gap-2">
-                  {movie.countries?.map((country) => (
-                    <span key={country.id} className="text-sm text-zinc-300">
+                  {movie.countries?.map((country, idx) => (
+                    <span key={country.id || country.slug || country.name || idx} className="text-sm text-zinc-300">
                       {country.name}
                     </span>
                   ))}

@@ -17,7 +17,26 @@ export default function FilterBar({ currentType, currentSlug }: FilterBarProps) 
   const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
 
-  if (isLoading || !data) return null;
+  const defaultTypes = [
+    { name: 'Phim Mới', slug: 'phim-moi-cap-nhat' },
+    { name: 'Phim Bộ', slug: 'phim-bo' },
+    { name: 'Phim Lẻ', slug: 'phim-le' },
+    { name: 'TV Shows', slug: 'tv-shows' },
+    { name: 'Hoạt Hình', slug: 'hoat-hinh' },
+    { name: 'Phim Vietsub', slug: 'phim-vietsub' },
+    { name: 'Phim Thuyết Minh', slug: 'phim-thuyet-minh' },
+    { name: 'Phim Lồng Tiếng', slug: 'phim-long-tieng' },
+    { name: 'Phim Đang Chiếu', slug: 'phim-bo-dang-chieu' },
+    { name: 'Phim Hoàn Thành', slug: 'phim-bo-hoan-thanh' },
+    { name: 'Phim Sắp Chiếu', slug: 'phim-sap-chieu' },
+    { name: 'Subteam', slug: 'subteam' },
+    { name: 'Phim Chiếu Rạp', slug: 'phim-chieu-rap' },
+  ];
+
+  const types = data?.types || defaultTypes;
+  const categories = data?.categories || [];
+  const countries = data?.countries || [];
+  const years = data?.years || Array.from({ length: 27 }, (_, i) => 2026 - i);
 
   const handleSelect = (type: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -100,25 +119,25 @@ export default function FilterBar({ currentType, currentSlug }: FilterBarProps) 
           label="Loại Phim" 
           value={currentSlug} 
           type="danh-sach"
-          options={data.types} 
+          options={types} 
         />
         <SelectBox 
           label="Thể Loại" 
           value={currentSlug} 
           type="the-loai"
-          options={data.categories.map(c => ({ name: c.name, slug: c.slug }))} 
+          options={categories.map(c => ({ name: c.name, slug: c.slug }))} 
         />
         <SelectBox 
           label="Quốc Gia" 
           value={currentSlug} 
           type="quoc-gia"
-          options={data.countries.map(c => ({ name: c.name, slug: c.slug }))} 
+          options={countries.map(c => ({ name: c.name, slug: c.slug }))} 
         />
         <SelectBox 
           label="Năm Phát Hành" 
           value={currentSlug} 
           type="nam-phat-hanh"
-          options={data.years.map(y => ({ name: y, slug: y.toString() }))} 
+          options={years.map(y => ({ name: y, slug: y.toString() }))} 
         />
       </div>
     </div>

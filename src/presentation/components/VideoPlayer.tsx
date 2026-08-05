@@ -16,6 +16,9 @@ import {
   Rewind,
   FastForward,
   PictureInPicture,
+  AlertTriangle,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
@@ -50,7 +53,8 @@ export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieS
         movie={movie} 
         nextEpisodeUrl={nextEpisodeUrl} 
         onNextEpisode={onNextEpisode} 
-        onError={() => setUseIframeFallback(true)}
+        linkEmbed={linkEmbed}
+        onSwitchIframe={() => setUseIframeFallback(true)}
       />
     );
   }
@@ -77,7 +81,8 @@ function HLSPlayer({
   movie,
   nextEpisodeUrl,
   onNextEpisode,
-  onError,
+  linkEmbed,
+  onSwitchIframe,
 }: { 
   url: string; 
   title?: string; 
@@ -87,7 +92,8 @@ function HLSPlayer({
   movie?: any;
   nextEpisodeUrl?: string;
   onNextEpisode?: () => void;
-  onError?: () => void;
+  linkEmbed?: string;
+  onSwitchIframe?: () => void;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -96,6 +102,11 @@ function HLSPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [slowNetworkWarning, setSlowNetworkWarning] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+
   const [showControls, setShowControls] = useState(true);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -213,39 +224,63 @@ function HLSPlayer({
     const video = videoRef.current;
     if (!video) return;
 
+    setIsLoading(true);
+    setHasError(false);
+    setErrorMessage(null);
+    setSlowNetworkWarning(false);
+
+    // Network delay warning timer (8 seconds)
+    const slowTimer = setTimeout(() => {
+      setSlowNetworkWarning(true);
+    }, 8000);
+
     let hls: Hls | null = null;
 
     if (Hls.isSupported()) {
       hls = new Hls({
         maxLoadingDelay: 4,
-        maxBufferLength: 15, // Buffer ahead 15s instead of 30s for faster initial load
+        maxBufferLength: 15,
         maxMaxBufferLength: 30,
         enableWorker: true,
-        startLevel: -1, // Auto start quality level based on network bandwidth
-        capLevelToPlayerSize: true, // Cap quality to video container size (saves bandwidth)
-        abrEwmaDefaultEstimate: 500000, // Estimate initial speed at 500kbps (starts faster)
+        startLevel: -1,
+        capLevelToPlayerSize: true,
+        abrEwmaDefaultEstimate: 500000,
       });
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsLoading(false);
+        setSlowNetworkWarning(false);
         video.play().then(() => setIsPlaying(true)).catch(() => {});
       });
+
+      let netRetries = 0;
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              console.warn('HLS network error, attempting recovery...', data);
-              hls?.startLoad();
+              netRetries++;
+              if (netRetries <= 2) {
+                console.warn(`[HLS] Network error retry ${netRetries}/2...`);
+                hls?.startLoad();
+              } else {
+                console.error('[HLS] Network error max retries reached');
+                setIsLoading(false);
+                setHasError(true);
+                setErrorMessage('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS). Vui lòng kiểm tra kết nối mạng hoặc thử nguồn khác.');
+                hls?.destroy();
+              }
               break;
             case Hls.ErrorTypes.MEDIA_ERROR:
-              console.warn('HLS media error, attempting recovery...', data);
+              console.warn('[HLS] Media error, attempting recovery...', data);
               hls?.recoverMediaError();
               break;
             default:
-              console.error('Unrecoverable HLS error:', data);
+              console.error('[HLS] Unrecoverable error:', data);
+              setIsLoading(false);
+              setHasError(true);
+              setErrorMessage('Không thể phát luồng video từ nguồn này (Codec/Format Error). Vui lòng chọn server hoặc nguồn phát khác.');
               hls?.destroy();
-              onError?.();
               break;
           }
         }
@@ -253,16 +288,26 @@ function HLSPlayer({
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS
       video.src = url;
-      video.addEventListener('loadedmetadata', () => {
+      const onLoaded = () => {
         setIsLoading(false);
+        setSlowNetworkWarning(false);
         video.play().then(() => setIsPlaying(true)).catch(() => {});
-      });
+      };
+      const onErrorNative = () => {
+        console.warn('[VideoPlayer] Native Safari HLS error:', video.error);
+        setIsLoading(false);
+        setHasError(true);
+        setErrorMessage('Thiết bị iOS/Safari không thể phát nguồn video này (CORS hoặc định dạng Audio/Video không hỗ trợ). Vui lòng chọn nguồn khác.');
+      };
+      video.addEventListener('loadedmetadata', onLoaded);
+      video.addEventListener('error', onErrorNative);
     }
 
     return () => {
+      clearTimeout(slowTimer);
       hls?.destroy();
     };
-  }, [url]);
+  }, [url, retryCount]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -720,10 +765,48 @@ function HLSPlayer({
         onLoadedData={(e) => { e.currentTarget.playbackRate = playbackRate; }}
       />
 
-      {/* Loading spinner */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-          <Loader2 className="w-12 h-12 text-red-600 animate-spin" />
+      {/* Loading spinner with Network Warning */}
+      {isLoading && !hasError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm z-30 p-4 text-center">
+          <Loader2 className="w-10 h-10 text-red-600 animate-spin mb-3" />
+          <p className="text-white text-xs sm:text-sm font-medium">Đang kết nối luồng video...</p>
+          {slowNetworkWarning && (
+            <div className="mt-3 bg-zinc-900/95 border border-yellow-500/30 rounded-lg px-3 py-2 text-xs text-yellow-400 max-w-sm animate-pulse shadow-lg">
+              ⚠️ Mạng đang chậm hoặc server phản hồi lâu. Bạn có thể thử chọn nguồn phát khác phía trên.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Explicit Video Error Overlay */}
+      {hasError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/95 z-40 p-6 text-center">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-3 sm:mb-4 text-red-500 shadow-lg shadow-red-500/10">
+            <AlertTriangle className="w-6 h-6 sm:w-8 sm:h-8" />
+          </div>
+          <h3 className="text-base sm:text-lg font-bold text-white mb-1 sm:mb-2">Lỗi Nguồn Phát Video</h3>
+          <p className="text-xs sm:text-sm text-zinc-400 max-w-md mb-5 leading-relaxed">
+            {errorMessage || 'Không thể kết nối hoặc phát nguồn video này.'}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs sm:text-sm font-medium transition-all shadow-lg shadow-red-600/20 active:scale-95 cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Thử tải lại</span>
+            </button>
+
+            {linkEmbed && onSwitchIframe && (
+              <button
+                onClick={() => onSwitchIframe()}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs sm:text-sm font-medium transition-all border border-zinc-700 active:scale-95 cursor-pointer"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>Dùng Iframe Dự Phòng</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 

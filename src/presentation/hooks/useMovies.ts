@@ -264,15 +264,50 @@ export function useMovieExtraSources(
   source: 'ophim' | 'phimapi' | 'nguonc' = 'ophim'
 ) {
   const tmdb = (tmdbOrMovie && 'tmdb' in tmdbOrMovie) ? tmdbOrMovie.tmdb : (tmdbOrMovie as Movie['tmdb']);
+  const imdbId = (tmdbOrMovie && 'imdbId' in tmdbOrMovie) ? tmdbOrMovie.imdbId : undefined;
   const slug = (tmdbOrMovie && 'slug' in tmdbOrMovie) ? tmdbOrMovie.slug : undefined;
 
   return useQuery({
-    queryKey: ['movie-extra-sources-v3', slug, tmdb?.id, source],
+    queryKey: ['movie-extra-sources-v4', slug, tmdb?.id, imdbId, source],
     queryFn: async () => {
       if (source !== 'ophim') return [];
       const extraList: ServerData[] = [];
+      const addedServerNames = new Set<string>();
 
-      // 1. PhimAPI extra m3u8 sources by TMDB ID
+      // 1. PhimAPI extra sources by IMDb ID
+      if (imdbId) {
+        try {
+          const res = await fetch(`https://phimapi.com/imdb/title/${imdbId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.episodes && Array.isArray(data.episodes)) {
+              data.episodes.forEach((s: any) => {
+                let sName = s.server_name || 'Nguồn Phụ';
+                if (!sName.toLowerCase().includes('phimapi') && !sName.toLowerCase().includes('nguồn phụ')) {
+                  sName = `${sName} (Nguồn Phụ - PhimAPI)`;
+                } else if (!sName.toLowerCase().includes('phimapi')) {
+                  sName = `${sName} (PhimAPI)`;
+                }
+                addedServerNames.add(sName);
+                extraList.push({
+                  serverName: sName,
+                  episodes: (s.server_data || []).map((ep: any) => ({
+                    name: ep.name,
+                    slug: ep.slug,
+                    filename: ep.filename || '',
+                    linkEmbed: ep.link_embed || '',
+                    linkM3u8: ep.link_m3u8 || ''
+                  }))
+                });
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching PhimAPI IMDb extra sources:', e);
+        }
+      }
+
+      // 2. PhimAPI extra m3u8 sources by TMDB ID
       if (tmdb?.id) {
         try {
           const res = await fetch(`https://phimapi.com/tmdb/${tmdb.type}/${tmdb.id}`);
@@ -286,25 +321,28 @@ export function useMovieExtraSources(
                 } else if (!sName.toLowerCase().includes('phimapi')) {
                   sName = `${sName} (PhimAPI)`;
                 }
-                extraList.push({
-                  serverName: sName,
-                  episodes: s.server_data.map((ep: any) => ({
-                    name: ep.name,
-                    slug: ep.slug,
-                    filename: ep.filename || '',
-                    linkEmbed: ep.link_embed || '',
-                    linkM3u8: ep.link_m3u8 || ''
-                  }))
-                });
+                if (!addedServerNames.has(sName)) {
+                  addedServerNames.add(sName);
+                  extraList.push({
+                    serverName: sName,
+                    episodes: (s.server_data || []).map((ep: any) => ({
+                      name: ep.name,
+                      slug: ep.slug,
+                      filename: ep.filename || '',
+                      linkEmbed: ep.link_embed || '',
+                      linkM3u8: ep.link_m3u8 || ''
+                    }))
+                  });
+                }
               });
             }
           }
         } catch (e) {
-          console.error('Error fetching PhimAPI extra sources:', e);
+          console.error('Error fetching PhimAPI TMDB extra sources:', e);
         }
       }
 
-      // 2. Nguồn C extra sources by Slug
+      // 3. Nguồn C extra sources by Slug
       if (slug) {
         try {
           const res = await fetch(`https://phim.nguonc.com/api/film/${slug}`);
@@ -343,7 +381,7 @@ export function useMovieExtraSources(
 
       return extraList;
     },
-    enabled: (!!tmdb?.id || !!slug) && source === 'ophim',
+    enabled: (!!imdbId || !!tmdb?.id || !!slug) && source === 'ophim',
     staleTime: 30 * 60 * 1000, // 30 minutes
   });
 }

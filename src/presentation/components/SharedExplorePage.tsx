@@ -41,8 +41,12 @@ export default function SharedExplorePage({ filterType, slug, title }: SharedExp
 
   if (isError || !data) {
     return (
-      <div className="container py-24 min-h-screen flex items-center justify-center text-red-500">
-        <p>Đã xảy ra lỗi khi tải danh sách. Vui lòng thử lại sau.</p>
+      <div className="container py-24 min-h-screen">
+        <FilterBar currentType={filterType} currentSlug={slug} />
+        <div className="flex flex-col items-center justify-center py-20 text-red-500">
+          <p className="text-lg font-medium">Đã xảy ra lỗi khi tải danh sách phim.</p>
+          <p className="text-sm text-zinc-400 mt-2">Vui lòng thử chọn bộ lọc khác hoặc thử lại sau.</p>
+        </div>
       </div>
     );
   }

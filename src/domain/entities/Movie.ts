@@ -16,7 +16,7 @@ export interface Country {
 }
 
 export interface FilterOption {
-  _id: string;
+  _id?: string;
   name: string;
   slug: string;
 }

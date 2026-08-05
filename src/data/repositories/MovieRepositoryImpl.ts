@@ -277,19 +277,57 @@ class MovieRepositoryImpl implements IMovieRepository {
   }
 
   async getCategoryList(): Promise<import('@/domain/entities/Movie').FilterOption[]> {
-    const data = await ophimFetch('/v1/api/the-loai') as any;
-    return data?.data?.items || [];
+    try {
+      const data = (await ophimFetch('/v1/api/the-loai')) as any;
+      const items = data?.data?.items || [];
+      if (items.length > 0) return items;
+    } catch (e) {
+      console.error('[getCategoryList] Failed:', e);
+    }
+    return [
+      { name: 'Hành Động', slug: 'hanh-dong' },
+      { name: 'Cổ Trang', slug: 'co-trang' },
+      { name: 'Tình Cảm', slug: 'tinh-cam' },
+      { name: 'Kinh Dị', slug: 'kinh-di' },
+      { name: 'Hài Hước', slug: 'hai-huoc' },
+      { name: 'Hình Sự', slug: 'hinh-su' },
+      { name: 'Võ Thuật', slug: 'vo-thuat' },
+      { name: 'Viễn Tưởng', slug: 'vien-tuong' },
+      { name: 'Tâm Lý', slug: 'tam-ly' },
+      { name: 'Phiêu Lưu', slug: 'phieu-luu' },
+      { name: 'Hoạt Hình', slug: 'hoat-hinh' },
+    ];
   }
 
   async getCountryList(): Promise<import('@/domain/entities/Movie').FilterOption[]> {
-    const data = await ophimFetch('/v1/api/quoc-gia') as any;
-    return data?.data?.items || [];
+    try {
+      const data = (await ophimFetch('/v1/api/quoc-gia')) as any;
+      const items = data?.data?.items || [];
+      if (items.length > 0) return items;
+    } catch (e) {
+      console.error('[getCountryList] Failed:', e);
+    }
+    return [
+      { name: 'Trung Quốc', slug: 'trung-quoc' },
+      { name: 'Hàn Quốc', slug: 'han-quoc' },
+      { name: 'Nhật Bản', slug: 'nhat-ban' },
+      { name: 'Âu Mỹ', slug: 'au-my' },
+      { name: 'Thái Lan', slug: 'thai-lan' },
+      { name: 'Việt Nam', slug: 'viet-nam' },
+      { name: 'Hồng Kông', slug: 'hong-kong' },
+      { name: 'Ấn Độ', slug: 'an-do' },
+      { name: 'Anh', slug: 'anh' },
+      { name: 'Pháp', slug: 'phap' },
+    ];
   }
 
   async getYearList(): Promise<number[]> {
-    const data = await ophimFetch('/v1/api/nam-phat-hanh') as any;
-    const items = data?.data?.items || [];
-    return items.map((i: any) => i.year).filter(Boolean);
+    const years: number[] = [];
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear; y >= 2000; y--) {
+      years.push(y);
+    }
+    return years;
   }
 }
 
