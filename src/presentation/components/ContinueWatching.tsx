@@ -63,7 +63,7 @@ export default function ContinueWatching() {
                 <Link href={href} className="block relative">
                   <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 shadow-lg">
                     <Image
-                      src={movie.posterUrl}
+                      src={movie.thumbUrl || movie.posterUrl || '/placeholder-poster.jpg'}
                       alt={movie.name}
                       fill
                       sizes="(max-width: 768px) 256px, 320px"

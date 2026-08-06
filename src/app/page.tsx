@@ -55,7 +55,7 @@ export default async function Home() {
         <MovieSlider 
           title="Mới Cập Nhật" 
           movies={newlyUpdated.items} 
-          seeMoreHref="/danh-sach/phim-moi-cap-nhat"
+          seeMoreHref="/danh-sach/phim-moi"
         />
         
         <MovieSlider 

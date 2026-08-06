@@ -2,14 +2,13 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play, Calendar, Clock, Star, Film, Users } from 'lucide-react';
-import { useMovieDetails, useMoviePeoples, useMovieAIAnalysis, useMovieExtraSources } from '@/presentation/hooks/useMovies';
+import { Play, Calendar, Clock, Star, Film, Users, Heart } from 'lucide-react';
+import { useMovieDetails, useMoviePeoples, useMovieExtraSources } from '@/presentation/hooks/useMovies';
 import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useMemo } from 'react';
-import { Heart, Sparkles } from 'lucide-react';
 import { toggleFavorite, isFavorite, addToHistory } from '@/lib/userStore';
 
 import { useSearchParams } from 'next/navigation';
@@ -19,28 +18,6 @@ function getYouTubeEmbedId(url: string): string | null {
   const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
   return match?.[1] ?? null;
 }
-
-const GeminiIcon = ({ className }: { className?: string }) => (
-  <svg 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    xmlns="http://www.w3.org/2000/svg" 
-    className={className}
-  >
-    <path 
-      d="M12 2.5C12 2.5 13 10 21.5 11.5C21.5 11.5 13 13 12 21.5C12 21.5 11 10 2.5 11.5C2.5 11.5 11 10 12 2.5Z" 
-      fill="url(#gemini_gradient)"
-    />
-    <defs>
-      <linearGradient id="gemini_gradient" x1="2.5" y1="2.5" x2="21.5" y2="21.5" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#4E82EE" />
-        <stop offset="0.4" stopColor="#A46EF5" />
-        <stop offset="0.7" stopColor="#E95F6A" />
-        <stop offset="1" stopColor="#F9A458" />
-      </linearGradient>
-    </defs>
-  </svg>
-);
 
 export default function MovieDetailClient({
   slug,
@@ -52,12 +29,11 @@ export default function MovieDetailClient({
   sourceParam?: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov';
 }) {
   const searchParams = useSearchParams();
-  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || propSource || initialMovie?.source || 'ophim';
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || propSource || initialMovie?.source || 'phimapi';
 
   const { data: movie, isLoading, isError } = useMovieDetails(slug, sourceParam, { initialData: initialMovie });
   const { data: extraSources } = useMovieExtraSources(movie, sourceParam);
   const { data: peoples } = useMoviePeoples(slug, movie?.tmdb);
-  const { data: aiAnalysis, isLoading: isAiLoading, isError: isAiError, error: aiError, refetch: generateAI } = useMovieAIAnalysis(movie);
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
@@ -258,129 +234,7 @@ export default function MovieDetailClient({
                   IMDb
                 </a>
               )}
-              <button
-                onClick={() => generateAI()}
-                disabled={isAiLoading}
-                className={cn(
-                  "inline-flex items-center justify-center px-6 py-3.5 bg-zinc-800/50 hover:bg-zinc-700/80 text-white font-bold rounded-lg transition-all border border-white/5",
-                  "active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed group/btn"
-                )}
-              >
-                <GeminiIcon className={cn("w-6 h-6 mr-2 transition-transform duration-500", isAiLoading ? "animate-spin" : "group-hover/btn:scale-110")} />
-                Phân tích AI
-              </button>
             </div>
-
-            {/* AI Analysis Section */}
-            {(isAiLoading || aiAnalysis || isAiError) && (
-              <div 
-                className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-900 p-6 md:p-10 mb-12 group shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-700"
-              >
-                {/* Modern Gemini Glow Background (Removed pulse and reduced blur for perf) */}
-                <div className="absolute -top-32 -left-32 w-80 h-80 bg-blue-600/10 blur-[80px] rounded-full" />
-                <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-indigo-600/10 blur-[80px] rounded-full" />
-                
-                <div className="flex items-center justify-between mb-10 pb-8 border-b border-white/5">
-                  <div className="flex items-center gap-5">
-                    <div className="relative">
-                      <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse" />
-                      <div className="relative p-0.5 bg-zinc-800/80 rounded-2xl border border-white/5 shadow-2xl">
-                        <GeminiIcon className="w-12 h-12 p-2" />
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-bold text-white tracking-tight font-outfit">Gemini Intelligence</h3>
-                      <p className="text-sm text-zinc-400 font-medium tracking-wide">Deep insight powered by Google</p>
-                    </div>
-                  </div>
-                  <div className="px-4 py-1.5 bg-white/5 border border-white/10 rounded-full flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                    <span className="text-[10px] font-black text-zinc-300 uppercase tracking-[0.2em]">Model 3.0</span>
-                  </div>
-                </div>
-
-                {isAiError && (
-                  <div className="p-5 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm flex items-center gap-4">
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                    <span>Lỗi hệ thống: {(aiError as any)?.message || 'Không thể kết nối với trí tuệ nhân tạo.'}</span>
-                  </div>
-                )}
-
-                {isAiLoading ? (
-                  <div className="space-y-8">
-                    <div className="space-y-4">
-                      <Skeleton className="w-32 h-5" />
-                      <Skeleton className="w-full h-32" />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                      <Skeleton className="w-full h-24" />
-                      <Skeleton className="w-full h-24" />
-                      <Skeleton className="w-full h-24" />
-                    </div>
-                  </div>
-                ) : aiAnalysis ? (
-                  <div className="space-y-12">
-                    {/* Main Content Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                      {/* Plot - Main Section */}
-                      <div className="lg:col-span-2 space-y-10">
-                        <div className="space-y-5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-600 rounded-full shadow-[0_0_12px_rgba(59,130,246,0.4)]" />
-                            <h4 className="text-lg md:text-xl font-bold text-white font-outfit">Cốt truyện chi tiết</h4>
-                          </div>
-                          <p className="text-zinc-100 text-[17px] md:text-[19px] leading-[1.8] font-medium pl-4">
-                            {aiAnalysis.plot}
-                          </p>
-                        </div>
-
-                        <div className="space-y-5 pt-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-1.5 h-6 bg-gradient-to-b from-indigo-500 to-purple-600 rounded-full shadow-[0_0_12px_rgba(99,102,241,0.4)]" />
-                            <h4 className="text-lg md:text-xl font-bold text-white font-outfit">Đánh giá chuyên sâu</h4>
-                          </div>
-                          <p className="text-zinc-400 text-[16px] md:text-lg leading-relaxed pl-4 italic">
-                            {aiAnalysis.review}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Info Sidebar */}
-                      <div className="space-y-10 bg-white/[0.04] p-8 rounded-[32px] border border-white/5 backdrop-blur-sm">
-                        <div className="space-y-4">
-                          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Điểm số dự kiến</h4>
-                          <div className="flex items-end gap-1.5">
-                            <span className="text-6xl font-black text-white tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">{aiAnalysis.score?.split('/')[0]}</span>
-                            <span className="text-2xl text-zinc-600 mb-2 font-bold">/ 10</span>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Thể loại đặc trưng</h4>
-                          <p className="text-zinc-100 font-bold text-lg leading-snug">{aiAnalysis.genre}</p>
-                        </div>
-
-                        <div className="space-y-4">
-                          <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Loại kết thúc</h4>
-                          <p className="text-zinc-100 font-bold text-lg leading-snug">{aiAnalysis.endingType}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Characters Section */}
-                    <div className="pt-12 border-t border-white/5">
-                      <div className="flex items-center gap-3 mb-8">
-                        <div className="w-1.5 h-6 bg-gradient-to-b from-purple-500 to-pink-600 rounded-full shadow-[0_0_12px_rgba(168,85,247,0.4)]" />
-                        <h4 className="text-lg md:text-xl font-bold text-white font-outfit">Hệ thống nhân vật</h4>
-                      </div>
-                      <div className="bg-white/[0.03] p-8 rounded-[32px] border border-white/5 text-zinc-100 leading-[1.9] text-base md:text-lg font-medium">
-                        {aiAnalysis.characters}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
 
             <div className="prose prose-invert max-w-none pt-4">
               <h3 className="text-lg font-semibold text-white mb-2">Nội dung</h3>

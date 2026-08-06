@@ -1,14 +1,14 @@
 /**
  * MovieRepositoryImpl — Concrete implementation of IMovieRepository.
- * Fetches data from the OPhim REST API and maps responses to domain entities.
- * Sử dụng ophimFetch (native fetch + Next.js Data Cache) thay vì axios.
+ * Fetches primary data from PhimAPI (phimapi.com) and fallback sources (OPhim, NguồnC, VSMOV).
+ * Sử dụng phimapiFetch (native fetch + Next.js Data Cache) thay vì axios.
  */
 
 import { Movie, MovieListResult } from '@/domain/entities/Movie';
 import { IMovieRepository } from '@/domain/repositories/IMovieRepository';
+import { phimapiFetch } from '@/data/api/phimapiClient';
 import { ophimFetch } from '@/data/api/ophimClient';
 import {
-  mapNewlyUpdatedResponse,
   mapV1ListResponse,
   mapMovieDetail,
   mapNguonCListResponse,
@@ -19,32 +19,45 @@ import {
 
 class MovieRepositoryImpl implements IMovieRepository {
   async getNewlyUpdated(page = 1): Promise<MovieListResult> {
-    const data = await ophimFetch(`/danh-sach/phim-moi-cap-nhat?page=${page}`);
-    return mapNewlyUpdatedResponse(data as any);
+    try {
+      const data = await phimapiFetch(`/v1/api/danh-sach/phim-moi?page=${page}`);
+      const mapped = mapV1ListResponse(data as any);
+      return {
+        ...mapped,
+        items: mapped.items.map((item) => ({ ...item, source: 'phimapi' as const })),
+      };
+    } catch (e) {
+      console.error('[getNewlyUpdated] PhimAPI failed:', e);
+    }
+    return {
+      items: [],
+      pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
+      cdnImageDomain: 'https://phimimg.com/upload/vod',
+    };
   }
 
   async getSingleMovies(page = 1): Promise<MovieListResult> {
-    const data = await ophimFetch(`/v1/api/danh-sach/phim-le?page=${page}`);
+    const data = await phimapiFetch(`/v1/api/danh-sach/phim-le?page=${page}`);
     return mapV1ListResponse(data as any);
   }
 
   async getSeriesMovies(page = 1): Promise<MovieListResult> {
-    const data = await ophimFetch(`/v1/api/danh-sach/phim-bo?page=${page}`);
+    const data = await phimapiFetch(`/v1/api/danh-sach/phim-bo?page=${page}`);
     return mapV1ListResponse(data as any);
   }
 
   async getAnimatedMovies(page = 1): Promise<MovieListResult> {
-    const data = await ophimFetch(`/v1/api/danh-sach/hoat-hinh?page=${page}`);
+    const data = await phimapiFetch(`/v1/api/danh-sach/hoat-hinh?page=${page}`);
     return mapV1ListResponse(data as any);
   }
 
   async getTvShows(page = 1): Promise<MovieListResult> {
-    const data = await ophimFetch(`/v1/api/danh-sach/tv-shows?page=${page}`);
+    const data = await phimapiFetch(`/v1/api/danh-sach/tv-shows?page=${page}`);
     return mapV1ListResponse(data as any);
   }
 
   async getCinemaMovies(page = 1): Promise<MovieListResult> {
-    const data = await ophimFetch(`/v1/api/danh-sach/phim-chieu-rap?page=${page}`);
+    const data = await phimapiFetch(`/v1/api/danh-sach/phim-chieu-rap?page=${page}`);
     return mapV1ListResponse(data as any);
   }
 
@@ -122,11 +135,11 @@ class MovieRepositoryImpl implements IMovieRepository {
 
   async getMovieDetails(
     slug: string,
-    source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
+    source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'phimapi'
   ): Promise<Movie | null> {
-    if (source === 'phimapi') {
-      const res = await this.fetchPhimAPIDetail(slug);
-      if (res) return { ...res, source: 'phimapi' };
+    if (source === 'ophim') {
+      const res = await this.fetchOPhimDetail(slug);
+      if (res) return { ...res, source: 'ophim' };
       return null;
     }
 
@@ -142,11 +155,11 @@ class MovieRepositoryImpl implements IMovieRepository {
       return null;
     }
 
-    // Default: source === 'ophim' (Nguồn chính)
-    const res = await this.fetchOPhimDetail(slug);
-    if (res) return { ...res, source: 'ophim' };
-    const fallbackPhimapi = await this.fetchPhimAPIDetail(slug);
-    if (fallbackPhimapi) return { ...fallbackPhimapi, source: 'phimapi' };
+    // Default: source === 'phimapi' (Nguồn chính)
+    const res = await this.fetchPhimAPIDetail(slug);
+    if (res) return { ...res, source: 'phimapi' };
+    const fallbackOphim = await this.fetchOPhimDetail(slug);
+    if (fallbackOphim) return { ...fallbackOphim, source: 'ophim' };
     const fallbackNguonc = await this.fetchNguonCDetail(slug);
     if (fallbackNguonc) return { ...fallbackNguonc, source: 'nguonc' };
     const fallbackVsmov = await this.fetchVsmovDetail(slug);
@@ -158,7 +171,7 @@ class MovieRepositoryImpl implements IMovieRepository {
   async searchMovies(
     keyword: string,
     page = 1,
-    source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
+    source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'phimapi'
   ): Promise<MovieListResult> {
     if (source === 'vsmov') {
       try {
@@ -218,22 +231,19 @@ class MovieRepositoryImpl implements IMovieRepository {
       };
     }
 
-    if (source === 'phimapi') {
+    if (source === 'ophim') {
       try {
-        const res = await fetch(
-          `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=24&page=${page}`,
-          { cache: 'no-store' }
+        const data = await ophimFetch(
+          `/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${page}`,
+          0
         );
-        if (res.ok) {
-          const data = await res.json();
-          const mapped = mapV1ListResponse(data as any);
-          return {
-            ...mapped,
-            items: mapped.items.map((item) => ({ ...item, source: 'phimapi' })),
-          };
-        }
+        const mapped = mapV1ListResponse(data as any);
+        return {
+          ...mapped,
+          items: mapped.items.map((item) => ({ ...item, source: 'ophim' })),
+        };
       } catch (e) {
-        console.error('[Search] PhimAPI search failed:', e);
+        console.error('[Search] OPhim search failed:', e);
       }
       return {
         items: [],
@@ -243,23 +253,26 @@ class MovieRepositoryImpl implements IMovieRepository {
           currentPage: page,
           totalPages: 1,
         },
-        cdnImageDomain: 'https://phimimg.com/upload/vod',
+        cdnImageDomain: 'https://img.ophim.live',
       };
     }
 
-    // Default: OPhim (Nguồn chính)
+    // Default: PhimAPI (Nguồn chính)
     try {
-      const data = await ophimFetch(
-        `/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&page=${page}`,
-        0
+      const res = await fetch(
+        `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=24&page=${page}`,
+        { cache: 'no-store' }
       );
-      const mapped = mapV1ListResponse(data as any);
-      return {
-        ...mapped,
-        items: mapped.items.map((item) => ({ ...item, source: 'ophim' })),
-      };
+      if (res.ok) {
+        const data = await res.json();
+        const mapped = mapV1ListResponse(data as any);
+        return {
+          ...mapped,
+          items: mapped.items.map((item) => ({ ...item, source: 'phimapi' })),
+        };
+      }
     } catch (e) {
-      console.error('[Search] OPhim search failed:', e);
+      console.error('[Search] PhimAPI search failed:', e);
     }
 
     return {
@@ -270,7 +283,7 @@ class MovieRepositoryImpl implements IMovieRepository {
         currentPage: page,
         totalPages: 1,
       },
-      cdnImageDomain: 'https://img.ophim.live',
+      cdnImageDomain: 'https://phimimg.com/upload/vod',
     };
   }
 
@@ -294,14 +307,14 @@ class MovieRepositoryImpl implements IMovieRepository {
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/the-loai/${categorySlug}?page=${page}`, filters);
-      const data = await ophimFetch(url);
+      const data = await phimapiFetch(url);
       return mapV1ListResponse(data as any);
     } catch (e) {
       console.error('[getMoviesByCategory] Failed:', e);
       return {
         items: [],
         pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
-        cdnImageDomain: 'https://img.ophim.live',
+        cdnImageDomain: 'https://phimimg.com/upload/vod',
       };
     }
   }
@@ -313,14 +326,14 @@ class MovieRepositoryImpl implements IMovieRepository {
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/quoc-gia/${countrySlug}?page=${page}`, filters);
-      const data = await ophimFetch(url);
+      const data = await phimapiFetch(url);
       return mapV1ListResponse(data as any);
     } catch (e) {
       console.error('[getMoviesByCountry] Failed:', e);
       return {
         items: [],
         pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
-        cdnImageDomain: 'https://img.ophim.live',
+        cdnImageDomain: 'https://phimimg.com/upload/vod',
       };
     }
   }
@@ -332,14 +345,14 @@ class MovieRepositoryImpl implements IMovieRepository {
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/nam-phat-hanh/${year}?page=${page}`, filters);
-      const data = await ophimFetch(url);
+      const data = await phimapiFetch(url);
       return mapV1ListResponse(data as any);
     } catch (e) {
       console.error('[getMoviesByYear] Failed:', e);
       return {
         items: [],
         pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
-        cdnImageDomain: 'https://img.ophim.live',
+        cdnImageDomain: 'https://phimimg.com/upload/vod',
       };
     }
   }
@@ -351,21 +364,21 @@ class MovieRepositoryImpl implements IMovieRepository {
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/danh-sach/${listSlug}?page=${page}`, filters);
-      const data = await ophimFetch(url);
+      const data = await phimapiFetch(url);
       return mapV1ListResponse(data as any);
     } catch (e) {
       console.error('[getMoviesByList] Failed:', e);
       return {
         items: [],
         pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: page, totalPages: 1 },
-        cdnImageDomain: 'https://img.ophim.live',
+        cdnImageDomain: 'https://phimimg.com/upload/vod',
       };
     }
   }
 
   async getCategoryList(): Promise<import('@/domain/entities/Movie').FilterOption[]> {
     try {
-      const data = (await ophimFetch('/v1/api/the-loai')) as any;
+      const data = (await phimapiFetch('/v1/api/the-loai')) as any;
       const items = data?.data?.items || [];
       if (items.length > 0) return items;
     } catch (e) {
@@ -388,7 +401,7 @@ class MovieRepositoryImpl implements IMovieRepository {
 
   async getCountryList(): Promise<import('@/domain/entities/Movie').FilterOption[]> {
     try {
-      const data = (await ophimFetch('/v1/api/quoc-gia')) as any;
+      const data = (await phimapiFetch('/v1/api/quoc-gia')) as any;
       const items = data?.data?.items || [];
       if (items.length > 0) return items;
     } catch (e) {

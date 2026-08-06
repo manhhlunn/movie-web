@@ -79,7 +79,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
           className="absolute inset-0"
         >
           <Image
-            src={movie.posterUrl || movie.thumbUrl}
+            src={movie.thumbUrl || movie.posterUrl}
             alt={movie.name}
             fill
             priority
@@ -199,7 +199,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
                 aria-label={m.name}
               >
                 <Image
-                  src={m.posterUrl || m.thumbUrl}
+                  src={m.thumbUrl || m.posterUrl}
                   alt={m.name}
                   fill
                   className="object-cover"

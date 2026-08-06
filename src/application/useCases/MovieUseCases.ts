@@ -29,7 +29,7 @@ export async function getHomeMovies(): Promise<HomePageData> {
 
 export async function getMovieDetails(
   slug: string,
-  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
+  source: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov' = 'phimapi'
 ): Promise<Movie | null> {
   return movieRepository.getMovieDetails(slug, source);
 }
@@ -39,7 +39,7 @@ export async function getMovieDetails(
 export async function searchMovies(
   keyword: string,
   page = 1,
-  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
+  source: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov' = 'phimapi'
 ): Promise<MovieListResult> {
   return movieRepository.searchMovies(keyword, page, source);
 }

@@ -12,7 +12,7 @@ interface Props {
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
   const { source } = await searchParams;
-  const sourceParam = (source as 'ophim' | 'phimapi' | 'nguonc') || 'ophim';
+  const sourceParam = (source as 'phimapi' | 'ophim' | 'nguonc' | 'vsmov') || 'phimapi';
 
   try {
     const movie = await getMovieDetails(slug, sourceParam);
@@ -33,7 +33,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 export default async function MovieDetailPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const { source } = await searchParams;
-  const sourceParam = (source as 'ophim' | 'phimapi' | 'nguonc') || 'ophim';
+  const sourceParam = (source as 'phimapi' | 'ophim' | 'nguonc' | 'vsmov') || 'phimapi';
   const movie = await getMovieDetails(slug, sourceParam);
 
   return (

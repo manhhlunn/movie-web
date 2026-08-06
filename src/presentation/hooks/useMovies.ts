@@ -29,7 +29,7 @@ export function useHomeMovies() {
 
 export function useMovieDetails(
   slug: string, 
-  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim',
+  source: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov' = 'phimapi',
   options?: { enabled?: boolean; initialData?: Movie | null }
 ) {
   return useQuery({
@@ -44,7 +44,7 @@ export function useMovieDetails(
 export function useSearchMovies(
   keyword: string,
   page = 1,
-  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
+  source: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov' = 'phimapi'
 ) {
   return useQuery({
     queryKey: ['search-movies-v3', keyword, page, source],
@@ -183,66 +183,7 @@ export function useMovieImages(slug: string, tmdb?: Movie['tmdb']) {
   });
 }
 
-export function useMovieKeywords(slug: string, tmdb?: Movie['tmdb']) {
-  return useQuery({
-    queryKey: ['movie-keywords', slug, tmdb?.id],
-    queryFn: async () => {
-      try {
-        const token = process.env.NEXT_PUBLIC_TMDB_TOKEN || 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIwZWFmN2NiN2FmMzBmYzA2MzMzMTc5NzcwOWYwM2Y3OSIsIm5iZiI6MTY5NDM5OTU0My43NTksInN1YiI6IjY0ZmU3YzM3ZTBjYTdmMDBjYmU5YjJmNSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.neCfOUwWVTvCaFB_Jyy4EH2gDRA5F7YeC7vdNINjj-A';
-        
-        const [kwRes, tmdbKwRes] = await Promise.all([
-          fetch(`https://ophim1.com/v1/api/phim/${slug}/keywords`).then(r => r.ok ? r.json() : null).catch(() => null),
-          tmdb?.id ? fetch(`https://api.themoviedb.org/3/${tmdb.type}/${tmdb.id}/keywords`, {
-            headers: { Authorization: `Bearer ${token}` }
-          }).then(r => r.ok ? r.json() : null).catch(() => null) : null,
-        ]);
 
-        const ophimKeywords = kwRes?.data?.items || [];
-        const tmdbKeywords = (tmdbKwRes?.keywords || tmdbKwRes?.results || []).map((k: any) => ({
-          name: k.name,
-          slug: k.name.toLowerCase().replace(/\s+/g, '-')
-        }));
-
-        // Merge and unique by name
-        const allKeywords = [...ophimKeywords, ...tmdbKeywords];
-        const uniqueKeywords = Array.from(new Map(allKeywords.map(k => [k.name.toLowerCase(), k])).values());
-        
-        return uniqueKeywords;
-      } catch (e) {
-        return [];
-      }
-    },
-    enabled: !!slug,
-    staleTime: 24 * 60 * 60 * 1000,
-  });
-}
-
-export function useMovieAIAnalysis(movie?: any) {
-  return useQuery({
-    queryKey: ['movie-ai-analysis', movie?.slug],
-    queryFn: async () => {
-      if (!movie) return null;
-      const res = await fetch('/api/ai-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          movieName: movie.name,
-          originName: movie.originName,
-          description: movie.description.replace(/<[^>]*>/g, ''), // Strip HTML
-          categories: movie.categories?.map((c: any) => c.name).join(', '),
-          year: movie.year,
-        }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || 'AI analysis failed');
-      }
-      return res.json();
-    },
-    enabled: false, // Don't run automatically
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours
-  });
-}
 
 function extractM3u8FromEmbed(embedUrl: string, explicitM3u8?: string): string {
   if (explicitM3u8 && explicitM3u8.includes('.m3u8')) return explicitM3u8;
@@ -262,7 +203,7 @@ function extractM3u8FromEmbed(embedUrl: string, explicitM3u8?: string): string {
 
 export function useMovieExtraSources(
   tmdbOrMovie?: Movie['tmdb'] | Movie | null,
-  source: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov' = 'ophim'
+  source: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov' = 'phimapi'
 ) {
   const tmdb = (tmdbOrMovie && 'tmdb' in tmdbOrMovie) ? tmdbOrMovie.tmdb : (tmdbOrMovie as Movie['tmdb']);
   const imdbId = (tmdbOrMovie && 'imdbId' in tmdbOrMovie) ? tmdbOrMovie.imdbId : undefined;
@@ -271,23 +212,21 @@ export function useMovieExtraSources(
   return useQuery({
     queryKey: ['movie-extra-sources-v5', slug, tmdb?.id, imdbId, source],
     queryFn: async () => {
-      if (source !== 'ophim') return [];
+      if (source !== 'phimapi') return [];
       const extraList: ServerData[] = [];
       const addedServerNames = new Set<string>();
 
-      // 1. PhimAPI extra sources by IMDb ID
-      if (imdbId) {
+      // 1. OPhim extra sources by Slug
+      if (slug) {
         try {
-          const res = await fetch(`https://phimapi.com/imdb/title/${imdbId}`);
+          const res = await fetch(`https://ophim1.com/phim/${slug}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.episodes && Array.isArray(data.episodes)) {
+            if (data && data.status !== false && Array.isArray(data.episodes)) {
               data.episodes.forEach((s: any) => {
-                let sName = s.server_name || 'Nguồn Phụ';
-                if (!sName.toLowerCase().includes('phimapi') && !sName.toLowerCase().includes('nguồn phụ')) {
-                  sName = `${sName} (Nguồn Phụ - PhimAPI)`;
-                } else if (!sName.toLowerCase().includes('phimapi')) {
-                  sName = `${sName} (PhimAPI)`;
+                let sName = s.server_name || 'OPhim';
+                if (!sName.toLowerCase().includes('ophim') && !sName.toLowerCase().includes('nguồn phụ')) {
+                  sName = `${sName} (Nguồn Phụ - OPhim)`;
                 }
                 addedServerNames.add(sName);
                 extraList.push({
@@ -304,46 +243,11 @@ export function useMovieExtraSources(
             }
           }
         } catch (e) {
-          console.error('Error fetching PhimAPI IMDb extra sources:', e);
+          console.error('Error fetching OPhim extra sources:', e);
         }
       }
 
-      // 2. PhimAPI extra m3u8 sources by TMDB ID
-      if (tmdb?.id) {
-        try {
-          const res = await fetch(`https://phimapi.com/tmdb/${tmdb.type}/${tmdb.id}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.episodes && Array.isArray(data.episodes)) {
-              data.episodes.forEach((s: any) => {
-                let sName = s.server_name || 'Nguồn Phụ';
-                if (!sName.toLowerCase().includes('phimapi') && !sName.toLowerCase().includes('nguồn phụ')) {
-                  sName = `${sName} (Nguồn Phụ - PhimAPI)`;
-                } else if (!sName.toLowerCase().includes('phimapi')) {
-                  sName = `${sName} (PhimAPI)`;
-                }
-                if (!addedServerNames.has(sName)) {
-                  addedServerNames.add(sName);
-                  extraList.push({
-                    serverName: sName,
-                    episodes: (s.server_data || []).map((ep: any) => ({
-                      name: ep.name,
-                      slug: ep.slug,
-                      filename: ep.filename || '',
-                      linkEmbed: ep.link_embed || '',
-                      linkM3u8: ep.link_m3u8 || ''
-                    }))
-                  });
-                }
-              });
-            }
-          }
-        } catch (e) {
-          console.error('Error fetching PhimAPI TMDB extra sources:', e);
-        }
-      }
-
-      // 3. Nguồn C extra sources by Slug
+      // 2. Nguồn C extra sources by Slug
       if (slug) {
         try {
           const res = await fetch(`https://phim.nguonc.com/api/film/${slug}`);
@@ -380,7 +284,7 @@ export function useMovieExtraSources(
         }
       }
 
-      // 4. VSMOV extra sources by Slug (Nguồn 4)
+      // 3. VSMOV extra sources by Slug (Nguồn 4)
       if (slug) {
         try {
           const res = await fetch(`https://vsmov.com/api/phim/${slug}`);
@@ -418,7 +322,7 @@ export function useMovieExtraSources(
 
       return extraList;
     },
-    enabled: (!!imdbId || !!tmdb?.id || !!slug) && source === 'ophim',
+    enabled: (!!imdbId || !!tmdb?.id || !!slug) && source === 'phimapi',
     staleTime: 30 * 60 * 1000, // 30 minutes
   });
 }
@@ -428,13 +332,11 @@ export function useMovieExtraSources(
 export function useMovieExtraDetails(slug: string, tmdb?: Movie['tmdb']) {
   const { data: peoples } = useMoviePeoples(slug, tmdb);
   const { data: images } = useMovieImages(slug, tmdb);
-  const { data: keywords } = useMovieKeywords(slug, tmdb);
 
   return {
     data: {
       peoples,
       images,
-      keywords
     }
   };
 }

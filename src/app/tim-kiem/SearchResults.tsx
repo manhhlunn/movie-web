@@ -13,17 +13,17 @@ export default function SearchResults() {
   const router = useRouter();
   const keyword = searchParams.get('keyword') || '';
   const pageStr = searchParams.get('page') || '1';
-  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || 'ophim';
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || 'phimapi';
   const page = parseInt(pageStr, 10);
 
-  const [activeTab, setActiveTab] = useState<'ophim' | 'phimapi' | 'nguonc' | 'vsmov'>(
-    sourceParam === 'phimapi'
-      ? 'phimapi'
+  const [activeTab, setActiveTab] = useState<'phimapi' | 'ophim' | 'nguonc' | 'vsmov'>(
+    sourceParam === 'ophim'
+      ? 'ophim'
       : sourceParam === 'nguonc'
       ? 'nguonc'
       : sourceParam === 'vsmov'
       ? 'vsmov'
-      : 'ophim'
+      : 'phimapi'
   );
 
   // Sync state if source query parameter in URL changes
@@ -35,7 +35,7 @@ export default function SearchResults() {
 
   const { data, isLoading, isError } = useSearchMovies(keyword, page, activeTab);
 
-  const handleTabChange = (tab: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') => {
+  const handleTabChange = (tab: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov') => {
     setActiveTab(tab);
     const newParams = new URLSearchParams(searchParams.toString());
     newParams.set('source', tab);
@@ -51,9 +51,9 @@ export default function SearchResults() {
     );
   }
 
-  const getSourceLabel = (src: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') => {
-    if (src === 'ophim') return 'Nguồn Chính (OPhim)';
-    if (src === 'phimapi') return 'Nguồn Phụ (PhimAPI)';
+  const getSourceLabel = (src: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov') => {
+    if (src === 'phimapi') return 'Nguồn Chính (PhimAPI)';
+    if (src === 'ophim') return 'Nguồn Phụ (OPhim)';
     if (src === 'nguonc') return 'Nguồn 3 (Nguồn C)';
     return 'Nguồn 4 (VSMOV)';
   };
@@ -63,18 +63,6 @@ export default function SearchResults() {
       {/* Source Selection Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 pb-3">
         <button
-          onClick={() => handleTabChange('ophim')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            activeTab === 'ophim'
-              ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
-              : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800'
-          }`}
-        >
-          <Database className="w-4 h-4" />
-          <span>Nguồn Chính (OPhim)</span>
-        </button>
-
-        <button
           onClick={() => handleTabChange('phimapi')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
             activeTab === 'phimapi'
@@ -83,7 +71,19 @@ export default function SearchResults() {
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>Nguồn Phụ (PhimAPI)</span>
+          <span>Nguồn Chính (PhimAPI)</span>
+        </button>
+
+        <button
+          onClick={() => handleTabChange('ophim')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            activeTab === 'ophim'
+              ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
+              : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800'
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>Nguồn Phụ (OPhim)</span>
         </button>
 
         <button
@@ -130,20 +130,20 @@ export default function SearchResults() {
             </span>.
           </p>
           <div className="flex gap-2">
-            {activeTab !== 'ophim' && (
-              <button
-                onClick={() => handleTabChange('ophim')}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm text-white rounded-lg transition-colors"
-              >
-                Thử tìm ở Nguồn Chính (OPhim) &rarr;
-              </button>
-            )}
             {activeTab !== 'phimapi' && (
               <button
                 onClick={() => handleTabChange('phimapi')}
                 className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm text-white rounded-lg transition-colors"
               >
-                Thử tìm ở Nguồn Phụ (PhimAPI) &rarr;
+                Thử tìm ở Nguồn Chính (PhimAPI) &rarr;
+              </button>
+            )}
+            {activeTab !== 'ophim' && (
+              <button
+                onClick={() => handleTabChange('ophim')}
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm text-white rounded-lg transition-colors"
+              >
+                Thử tìm ở Nguồn Phụ (OPhim) &rarr;
               </button>
             )}
             {activeTab !== 'nguonc' && (

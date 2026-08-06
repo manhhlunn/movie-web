@@ -13,7 +13,7 @@ import { useSearchParams } from 'next/navigation';
 
 export default function WatchClient({ slug, episode }: { slug: string; episode: string }) {
   const searchParams = useSearchParams();
-  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || 'ophim';
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || 'phimapi';
 
   const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug, sourceParam);
   const { data: extraSources } = useMovieExtraSources(movie, sourceParam);

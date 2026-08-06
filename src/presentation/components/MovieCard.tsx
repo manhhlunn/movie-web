@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Play, Clock, Film, Star } from 'lucide-react';
@@ -16,9 +16,15 @@ interface MovieCardProps {
 
 const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: MovieCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
-  const imageSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.jpg';
+  const initialSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.jpg';
+  const [imgSrc, setImgSrc] = useState(initialSrc);
   const effectiveSource = movie.source || propsSource;
   const href = `/phim/${movie.slug}${effectiveSource ? `?source=${effectiveSource}` : ''}`;
+
+  // Sync state if movie prop changes
+  useEffect(() => {
+    setImgSrc(movie.posterUrl || movie.thumbUrl || '/placeholder-poster.jpg');
+  }, [movie.posterUrl, movie.thumbUrl]);
 
   return (
     <div
@@ -33,7 +39,7 @@ const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: Mo
       <Link href={href} className="block">
         <div className="relative w-full aspect-[2/3] overflow-hidden">
           <Image
-            src={imageSrc}
+            src={imgSrc}
             alt={movie.name}
             fill
             sizes="(max-width: 640px) 33vw, (max-width: 1024px) 20vw, 12vw"
@@ -41,6 +47,13 @@ const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: Mo
             priority={index < 2}
             loading={index < 6 ? 'eager' : 'lazy'}
             className="object-cover transition-all duration-500 group-hover:scale-110"
+            onError={() => {
+              if (imgSrc !== movie.thumbUrl && movie.thumbUrl) {
+                setImgSrc(movie.thumbUrl);
+              } else if (imgSrc !== '/placeholder-poster.jpg') {
+                setImgSrc('/placeholder-poster.jpg');
+              }
+            }}
           />
 
           {/* Quality badge */}

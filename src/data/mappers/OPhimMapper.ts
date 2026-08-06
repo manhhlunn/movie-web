@@ -27,20 +27,27 @@ function safeNumber(val: unknown, fallback = 0): number {
 
 function resolveImageUrl(raw: string | undefined | null, cdn: string): string {
   if (!raw) return '';
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-  
-  const cleanCdn = cdn.replace(/\/$/, '');
+  if (raw.startsWith('http://')) {
+    raw = raw.replace('http://', 'https://');
+  }
+  if (raw.startsWith('https://')) return raw;
+
   const cleanRaw = raw.startsWith('/') ? raw : `/${raw}`;
 
-  if (cleanRaw.startsWith('/upload/') && cleanCdn.endsWith('/upload/vod')) {
-    const domainOnly = cleanCdn.replace(/\/upload\/vod$/, '');
-    return `${domainOnly}${cleanRaw}`;
-  }
-  if (cleanRaw.startsWith('/uploads/') && cleanCdn.endsWith('/uploads/movies')) {
-    const domainOnly = cleanCdn.replace(/\/uploads\/movies$/, '');
-    return `${domainOnly}${cleanRaw}`;
+  // Extract base domain (e.g. "https://phimimg.com" from "https://phimimg.com/upload/vod")
+  let domain = cdn.replace(/\/$/, '');
+  if (domain.includes('/upload/vod')) {
+    domain = domain.replace(/\/upload\/vod$/, '');
+  } else if (domain.includes('/uploads/movies')) {
+    domain = domain.replace(/\/uploads\/movies$/, '');
   }
 
+  // If raw image path already includes /upload/ or /uploads/, append directly to base domain
+  if (cleanRaw.startsWith('/upload/') || cleanRaw.startsWith('/uploads/')) {
+    return `${domain}${cleanRaw}`;
+  }
+
+  const cleanCdn = cdn.replace(/\/$/, '');
   return `${cleanCdn}${cleanRaw}`;
 }
 
@@ -79,13 +86,13 @@ export function mapServerData(
   const serverEpisodes = Array.isArray(raw?.server_data) ? raw.server_data : [];
   let sName = safeString(raw?.server_name, 'Server #1');
 
-  if (sourceTag === 'ophim') {
-    if (!sName.toLowerCase().includes('ophim') && !sName.toLowerCase().includes('nguồn chính')) {
-      sName = `${sName} (Nguồn Chính - OPhim)`;
+  if (sourceTag === 'phimapi') {
+    if (!sName.toLowerCase().includes('phimapi') && !sName.toLowerCase().includes('nguồn chính')) {
+      sName = `${sName} (Nguồn Chính - PhimAPI)`;
     }
-  } else if (sourceTag === 'phimapi') {
-    if (!sName.toLowerCase().includes('phimapi') && !sName.toLowerCase().includes('nguồn phụ')) {
-      sName = `${sName} (Nguồn Phụ - PhimAPI)`;
+  } else if (sourceTag === 'ophim') {
+    if (!sName.toLowerCase().includes('ophim') && !sName.toLowerCase().includes('nguồn phụ')) {
+      sName = `${sName} (Nguồn Phụ - OPhim)`;
     }
   } else if (sourceTag === 'nguonc') {
     if (!sName.toLowerCase().includes('nguonc') && !sName.toLowerCase().includes('nguồn c')) {
