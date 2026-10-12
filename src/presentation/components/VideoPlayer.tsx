@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
-import { syncWatchHistory, fetchOnlineWatchHistory, getUserId, fetchUserHistory } from '@/lib/syncHistory';
+import { syncWatchHistory, fetchOnlineWatchHistory, getUserId, fetchUserHistory, WatchHistoryItem } from '@/lib/syncHistory';
 import { useRouter } from 'next/navigation';
 
 interface VideoPlayerProps {
