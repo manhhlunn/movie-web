@@ -343,8 +343,14 @@ function HLSPlayer({
             isHistoryFetchingRef.current = false;
             clearTimeout(historyFetchTimeout);
             if (item) {
-              const ep = item.episodeSlug || item.episode_slug;
-              if (isEpisodeMatch(ep, episodeSlug, isSingle)) {
+              const savedServerIdx = item.serverIndex ?? item.server_index ?? 0;
+              const savedEpIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+              const isMatch =
+                isSingle ||
+                (savedServerIdx === serverIndex && savedEpIdx === episodeIndex) ||
+                (item.episodeSlug && isEpisodeMatch(item.episodeSlug, episodeSlug, isSingle));
+
+              if (isMatch) {
                 const raw = Number(item.position) || 0;
                 const sec = raw >= 1000 ? raw / 1000 : raw;
                 if (sec > 3) {
@@ -369,8 +375,14 @@ function HLSPlayer({
               isHistoryFetchingRef.current = false;
               clearTimeout(historyFetchTimeout);
               if (item) {
-                const ep = item.episodeSlug || item.episode_slug;
-                if (isEpisodeMatch(ep, episodeSlug, isSingle)) {
+                const savedServerIdx = item.serverIndex ?? item.server_index ?? 0;
+                const savedEpIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+                const isMatch =
+                  isSingle ||
+                  (savedServerIdx === serverIndex && savedEpIdx === episodeIndex) ||
+                  (item.episodeSlug && isEpisodeMatch(item.episodeSlug, episodeSlug, isSingle));
+
+                if (isMatch) {
                   const raw = Number(item.position) || 0;
                   const sec = raw >= 1000 ? raw / 1000 : raw;
                   if (sec > 3) {

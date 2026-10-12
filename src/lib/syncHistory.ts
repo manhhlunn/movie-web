@@ -12,6 +12,8 @@ export interface WatchHistoryItem {
   server_index?: number;
   episodeIndex: number;
   episode_index?: number;
+  playerIndex?: number;
+  player_index?: number;
   episodeSlug?: string | null;
   episode_slug?: string | null;
   position: number;
@@ -33,6 +35,7 @@ export interface SyncHistoryParams {
   source: string;
   serverIndex: number;
   episodeIndex: number;
+  playerIndex?: number;
   episodeSlug?: string;
   position: number;
   duration?: number;

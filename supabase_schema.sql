@@ -12,10 +12,9 @@ CREATE TABLE IF NOT EXISTS public.watch_history (
     slug TEXT NOT NULL,                      -- Slug phim (duy nhất theo sync_id)
     source TEXT NOT NULL,                    -- Nguồn phim: 'phimapi', 'ophim', 'nguonc', 'vsmov'
     server_index INTEGER NOT NULL DEFAULT 0, -- Vị trí server đang xem (0, 1, 2...)
-    episode_index INTEGER NOT NULL DEFAULT 0,-- Vị trí tập phim trong server (0, 1, 2...)
-    episode_slug TEXT,                       -- Slug tập phim (vd: 'tap-1')
-    position NUMERIC NOT NULL DEFAULT 0,     -- Thời điểm đã xem (tính bằng giây)
-    duration NUMERIC NOT NULL DEFAULT 0,     -- Tổng thời lượng tập phim (giây)
+    episode_index INTEGER NOT NULL DEFAULT 0,-- Vị trí tập phim / playerIndex trong server (0, 1, 2...)
+    position NUMERIC NOT NULL DEFAULT 0,     -- Thời điểm đã xem (mili-giây)
+    duration NUMERIC NOT NULL DEFAULT 0,     -- Tổng thời lượng tập phim (mili-giây)
     movie_name TEXT,                         -- Tên phim (để hiển thị nhanh trên UI)
     poster_url TEXT,                         -- Poster phim
     thumb_url TEXT,                          -- Thumbnail / backdrop phim
@@ -25,6 +24,9 @@ CREATE TABLE IF NOT EXISTS public.watch_history (
     -- Ràng buộc: Mỗi người dùng / thiết bị chỉ lưu 1 bản ghi lịch sử duy nhất cho mỗi phim (để Upsert)
     CONSTRAINT uq_watch_history_sync_slug UNIQUE (sync_id, slug)
 );
+
+-- Migration nếu bảng đã tồn tại từ trước: Xóa cột episode_slug (không cần lưu trong DB)
+ALTER TABLE public.watch_history DROP COLUMN IF EXISTS episode_slug;
 
 -- 2. Tạo Index tối ưu hóa truy vấn tìm kiếm và sắp xếp
 CREATE INDEX IF NOT EXISTS idx_watch_history_sync_id ON public.watch_history(sync_id);

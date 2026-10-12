@@ -31,7 +31,7 @@ function formatHistoryRow(row: any) {
     source: row.source,
     serverIndex: row.server_index ?? row.serverIndex ?? 0,
     episodeIndex: row.episode_index ?? row.episodeIndex ?? 0,
-    episodeSlug: row.episode_slug || row.episodeSlug || null,
+    playerIndex: row.episode_index ?? row.episodeIndex ?? 0,
     position: positionMs,
     duration: durationMs,
     movieName,
@@ -193,8 +193,10 @@ export async function POST(
     const effectivePosterUrl = posterUrl || poster_url || null;
     const effectiveThumbUrl = thumbUrl || thumb_url || effectivePosterUrl;
     const effectiveServerIndex = Math.max(0, Math.floor(Number(serverIndex ?? server_index) || 0));
-    const effectiveEpisodeIndex = Math.max(0, Math.floor(Number(episodeIndex ?? episode_index) || 0));
-    const effectiveEpisodeSlug = episodeSlug || episode_slug || null;
+    const effectiveEpisodeIndex = Math.max(
+      0,
+      Math.floor(Number(body.playerIndex ?? body.player_index ?? episodeIndex ?? episode_index) || 0)
+    );
 
     const rawPos = Number(body.positionMs ?? body.position_ms ?? position) || 0;
     const rawDur = Number(body.durationMs ?? body.duration_ms ?? duration) || 0;
@@ -238,7 +240,6 @@ export async function POST(
       source,
       server_index: effectiveServerIndex,
       episode_index: effectiveEpisodeIndex,
-      episode_slug: effectiveEpisodeSlug,
       position: finalPosition,
       duration: finalDuration,
       movie_name: effectiveMovieName,

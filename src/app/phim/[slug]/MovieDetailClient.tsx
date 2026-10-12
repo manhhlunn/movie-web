@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { useState, useEffect, useMemo } from 'react';
 import { toggleFavorite, isFavorite, addToHistory } from '@/lib/userStore';
 import { getUserId, fetchUserHistory, fetchOnlineWatchHistory } from '@/lib/syncHistory';
+import { getEpisodeSlugFromDetail } from '@/lib/episodeUtils';
 
 import { useSearchParams } from 'next/navigation';
 
@@ -51,16 +52,26 @@ export default function MovieDetailClient({
     return merged;
   }, [movie, extraSources]);
 
+  const effectiveMovie = useMemo(() => {
+    if (!movie) return undefined;
+    return { ...movie, servers: combinedServers };
+  }, [movie, combinedServers]);
+
   useEffect(() => {
     const activeUserId = getUserId();
     if (activeUserId) {
       fetchUserHistory(activeUserId, slug).then((item: any) => {
         if (item) {
-          const ep = item.episodeSlug || item.episode_slug;
+          const sIdx = item.serverIndex ?? item.server_index ?? 0;
+          const pIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+          const targetSlug =
+            item.episodeSlug ||
+            item.episode_slug ||
+            getEpisodeSlugFromDetail(effectiveMovie, sIdx, pIdx);
           const pos = Number(item.position) || 0;
           const sec = pos >= 1000 ? pos / 1000 : pos;
-          if (ep && sec > 3) {
-            setWatchProgress({ episodeSlug: ep, time: sec });
+          if (targetSlug && sec > 3) {
+            setWatchProgress({ episodeSlug: targetSlug, time: sec });
           }
         }
       });
@@ -73,11 +84,16 @@ export default function MovieDetailClient({
       } else {
         fetchOnlineWatchHistory(slug).then((item: any) => {
           if (item) {
-            const ep = item.episodeSlug || item.episode_slug;
+            const sIdx = item.serverIndex ?? item.server_index ?? 0;
+            const pIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+            const targetSlug =
+              item.episodeSlug ||
+              item.episode_slug ||
+              getEpisodeSlugFromDetail(effectiveMovie, sIdx, pIdx);
             const pos = Number(item.position) || 0;
             const sec = pos >= 1000 ? pos / 1000 : pos;
-            if (ep && sec > 3) {
-              setWatchProgress({ episodeSlug: ep, time: sec });
+            if (targetSlug && sec > 3) {
+              setWatchProgress({ episodeSlug: targetSlug, time: sec });
             }
           }
         });
@@ -85,7 +101,7 @@ export default function MovieDetailClient({
     }
     
     setIsBookmarked(isFavorite(slug));
-  }, [slug]);
+  }, [slug, effectiveMovie]);
 
   useEffect(() => {
     if (movie) {

@@ -38,7 +38,9 @@ export default function ContinueWatching() {
             year: 0,
             quality: 'HD',
             lang: '',
-            episodeCurrent: item.episode_slug ? `Tập ${item.episode_slug.replace('tap-', '')}` : '',
+            episodeCurrent: (item.episodeSlug || item.episode_slug)
+              ? `Tập ${(item.episodeSlug || item.episode_slug).replace('tap-', '')}`
+              : `Tập ${(item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0) + 1}`,
             episodeTotal: '',
             time: '',
             description: '',
@@ -52,8 +54,11 @@ export default function ContinueWatching() {
             imdbVoteCount: 0,
             source: item.source as any,
             serverIndex: item.server_index ?? item.serverIndex ?? 0,
-            episodeIndex: item.episode_index ?? item.episodeIndex ?? 0,
-            lastEpisodeSlug: item.episode_slug || item.episodeSlug || undefined,
+            episodeIndex: item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0,
+            lastEpisodeSlug:
+              item.episodeSlug ||
+              item.episode_slug ||
+              `tap-${(item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0) + 1}`,
             lastTime: Number(item.position) || 0,
             lastDuration: Number(item.duration) || 0,
           }));

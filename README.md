@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## 📖 API Documentation
+Chi tiết về hệ thống API Watch History (Lịch sử xem phim) kết nối Supabase, format mili-giây, cơ chế đồng bộ không lưu `episodeSlug`:
+👉 Xem tại [API_DOCS.md](./API_DOCS.md)
+
 ## Getting Started
 
 First, run the development server:
