@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { ServerData } from '@/domain/entities/Movie';
 import { Play } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import { isEpisodeMatch } from '@/lib/episodeUtils';
 
 interface EpisodeListProps {
   servers: ServerData[];
@@ -40,10 +41,8 @@ export default function EpisodeList({
           <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3">
             {server.episodes.map((ep) => {
               const isMatchSlug =
-                ep.slug === currentEpisodeSlug ||
-                ep.name === currentEpisodeSlug ||
-                `tap-${ep.slug}` === currentEpisodeSlug ||
-                ep.slug === `tap-${currentEpisodeSlug}`;
+                isEpisodeMatch(ep.slug, currentEpisodeSlug) ||
+                isEpisodeMatch(ep.name, currentEpisodeSlug);
 
               const isActive = isMatchSlug && server.serverName === activeServerName;
 

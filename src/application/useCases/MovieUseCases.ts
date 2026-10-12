@@ -5,6 +5,7 @@
 
 import { Movie, MovieListResult } from '@/domain/entities/Movie';
 import { movieRepository } from '@/data/repositories/MovieRepositoryImpl';
+import { isEpisodeMatch } from '@/lib/episodeUtils';
 
 // ─── Home Page ───────────────────────────────────────────────
 
@@ -60,19 +61,7 @@ export interface StreamInfo {
  * Dùng khi đã có movie data từ useMovieDetails.
  */
 function matchEpisodeSlug(epSlug: string, epName: string, targetSlug: string): boolean {
-  const s1 = (epSlug || '').toLowerCase().trim();
-  const s2 = (epName || '').toLowerCase().trim();
-  const t = (targetSlug || '').toLowerCase().trim();
-
-  if (s1 === t || s2 === t) return true;
-  if (`tap-${s1}` === t || s1 === `tap-${t}`) return true;
-  if (`tap-${s2}` === t || s2 === `tap-${t}`) return true;
-
-  const cleanS1 = s1.replace(/^tap-/, '');
-  const cleanT = t.replace(/^tap-/, '');
-  if (cleanS1 && cleanS1 === cleanT) return true;
-
-  return false;
+  return isEpisodeMatch(epSlug, targetSlug) || isEpisodeMatch(epName, targetSlug);
 }
 
 export function resolveStreamLink(

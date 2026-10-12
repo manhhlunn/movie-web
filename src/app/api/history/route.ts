@@ -140,6 +140,25 @@ export async function POST(request: NextRequest) {
         ? Math.round(rawDur * 1000)
         : Math.round(rawDur);
 
+    let finalPosition = Math.max(0, effectivePosition);
+    let finalDuration = Math.max(0, effectiveDuration);
+
+    // BẢO VỆ TIẾN ĐỘ: Nếu client gửi vị trí <= 0, kiểm tra bản ghi hiện tại trong Supabase.
+    // Nếu bản ghi cũ đã có tiến độ xem > 0, KHÔNG ĐƯỢC ghi đè 0 mà giữ nguyên tiến độ cũ.
+    if (finalPosition <= 0) {
+      const { data: existing } = await supabase
+        .from('watch_history')
+        .select('position, duration')
+        .eq('sync_id', syncId)
+        .eq('slug', slug)
+        .maybeSingle();
+
+      if (existing && Number(existing.position) > 0) {
+        finalPosition = Number(existing.position);
+        finalDuration = Number(existing.duration) || finalDuration;
+      }
+    }
+
     const payloadToSave = {
       sync_id: syncId,
       user_id: userId || null,
@@ -149,8 +168,8 @@ export async function POST(request: NextRequest) {
       server_index: effectiveServerIndex,
       episode_index: effectiveEpisodeIndex,
       episode_slug: effectiveEpisodeSlug,
-      position: Math.max(0, effectivePosition),
-      duration: Math.max(0, effectiveDuration),
+      position: finalPosition,
+      duration: finalDuration,
       movie_name: effectiveMovieName,
       poster_url: effectivePosterUrl,
       thumb_url: effectiveThumbUrl,

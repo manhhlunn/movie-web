@@ -79,9 +79,8 @@ export const addToHistory = (
 
   // ─── NẾU CÓ NHẬP ID: CHỈ LƯU VÀO SUPABASE, KHÔNG LƯU Ở LOCAL CỦA MÁY NỮA ───
   if (userId) {
-    // Nếu chỉ mở trang thông tin phim (chưa có tập hoặc thời gian xem cụ thể),
-    // không ghi đè tiến độ xem thực tế đã có trên Supabase
-    if (lastTime === undefined && !lastEpisodeSlug) {
+    // KHÔNG BAO GIỜ ghi đè tiến độ về 0 khi mở trang hoặc chưa có thời gian xem thực tế
+    if (lastTime === undefined || lastTime <= 0) {
       return;
     }
 
@@ -92,7 +91,7 @@ export const addToHistory = (
         serverIndex: serverIndex ?? 0,
         episodeIndex: episodeIndex ?? 0,
         episodeSlug: lastEpisodeSlug || movie.lastEpisodeSlug,
-        position: lastTime ?? movie.lastTime ?? 0,
+        position: lastTime,
         duration: lastDuration ?? movie.lastDuration ?? 0,
         movieName,
         posterUrl,
@@ -163,8 +162,8 @@ export const addToHistory = (
     window.dispatchEvent(new CustomEvent('movie-history-changed'));
   }
 
-  // Tự động đồng bộ lên Supabase với deviceId (chỉ khi có tiến độ xem thực tế)
-  if (lastTime !== undefined || lastEpisodeSlug !== undefined) {
+  // Tự động đồng bộ lên Supabase với deviceId (chỉ khi có tiến độ xem thực tế > 0)
+  if (lastTime !== undefined && lastTime > 0) {
     syncWatchHistory(
       {
         slug: movieToStore.slug,
@@ -172,7 +171,7 @@ export const addToHistory = (
         serverIndex: movieToStore.serverIndex ?? 0,
         episodeIndex: movieToStore.episodeIndex ?? 0,
         episodeSlug: lastEpisodeSlug || movieToStore.lastEpisodeSlug,
-        position: lastTime ?? movieToStore.lastTime ?? 0,
+        position: lastTime,
         duration: lastDuration ?? movieToStore.lastDuration ?? 0,
         movieName: movieToStore.movieName || movieToStore.name,
         posterUrl: movieToStore.posterUrl,

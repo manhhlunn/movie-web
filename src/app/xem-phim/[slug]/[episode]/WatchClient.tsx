@@ -7,7 +7,7 @@ import VideoPlayer from '@/presentation/components/VideoPlayer';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
-import { addToHistory } from '@/lib/userStore';
+import { isEpisodeMatch } from '@/lib/episodeUtils';
 
 import { Movie } from '@/domain/entities/Movie';
 import { useSearchParams } from 'next/navigation';
@@ -55,12 +55,6 @@ export default function WatchClient({
 
   const streamInfo = useStreamLink(combinedMovie, currentEpisodeSlug, selectedServerName);
 
-  useEffect(() => {
-    if (movie && currentEpisodeSlug) {
-      addToHistory(movie, currentEpisodeSlug);
-    }
-  }, [movie, currentEpisodeSlug]);
-
   const handleEpisodeChange = (newEpisodeSlug: string, serverName?: string) => {
     setCurrentEpisodeSlug(newEpisodeSlug);
     if (serverName) {
@@ -76,7 +70,9 @@ export default function WatchClient({
       let nextEpName = newEpisodeSlug;
       if (combinedMovie.servers) {
         for (const server of combinedMovie.servers) {
-          const ep = server.episodes.find((e) => e.slug === newEpisodeSlug);
+          const ep = server.episodes.find(
+            (e) => isEpisodeMatch(e.slug, newEpisodeSlug) || isEpisodeMatch(e.name, newEpisodeSlug)
+          );
           if (ep) {
             nextEpName = ep.name;
             break;
@@ -91,7 +87,9 @@ export default function WatchClient({
   let nextEpisodeSlug: string | null = null;
   if (combinedMovie?.servers) {
     for (const server of combinedMovie.servers) {
-      const idx = server.episodes.findIndex((e) => e.slug === currentEpisodeSlug);
+      const idx = server.episodes.findIndex(
+        (e) => isEpisodeMatch(e.slug, currentEpisodeSlug) || isEpisodeMatch(e.name, currentEpisodeSlug)
+      );
       if (idx !== -1 && idx < server.episodes.length - 1) {
         nextEpisodeSlug = server.episodes[idx + 1].slug;
         break;
@@ -107,7 +105,12 @@ export default function WatchClient({
 
   const currentServer = combinedMovie?.servers?.[serverIndex];
   const episodeIndex = currentServer?.episodes
-    ? Math.max(0, currentServer.episodes.findIndex((e) => e.slug === currentEpisodeSlug))
+    ? Math.max(
+        0,
+        currentServer.episodes.findIndex(
+          (e) => isEpisodeMatch(e.slug, currentEpisodeSlug) || isEpisodeMatch(e.name, currentEpisodeSlug)
+        )
+      )
     : 0;
 
   if (isMovieLoading) {
