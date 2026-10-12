@@ -10,6 +10,7 @@ import { Skeleton } from '@/presentation/components/Skeleton';
 import { cn } from '@/lib/utils';
 import { useState, useEffect, useMemo } from 'react';
 import { toggleFavorite, isFavorite, addToHistory } from '@/lib/userStore';
+import { getUserId, fetchUserHistory, fetchOnlineWatchHistory } from '@/lib/syncHistory';
 
 import { useSearchParams } from 'next/navigation';
 
@@ -51,11 +52,36 @@ export default function MovieDetailClient({
   }, [movie, extraSources]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`watch-progress-${slug}`);
-    if (saved) {
-      try {
-        setWatchProgress(JSON.parse(saved));
-      } catch (e) {}
+    const activeUserId = getUserId();
+    if (activeUserId) {
+      fetchUserHistory(activeUserId, slug).then((item: any) => {
+        if (item) {
+          const ep = item.episodeSlug || item.episode_slug;
+          const pos = Number(item.position) || 0;
+          const sec = pos >= 1000 ? pos / 1000 : pos;
+          if (ep && sec > 3) {
+            setWatchProgress({ episodeSlug: ep, time: sec });
+          }
+        }
+      });
+    } else {
+      const saved = localStorage.getItem(`watch-progress-${slug}`);
+      if (saved) {
+        try {
+          setWatchProgress(JSON.parse(saved));
+        } catch (e) {}
+      } else {
+        fetchOnlineWatchHistory(slug).then((item: any) => {
+          if (item) {
+            const ep = item.episodeSlug || item.episode_slug;
+            const pos = Number(item.position) || 0;
+            const sec = pos >= 1000 ? pos / 1000 : pos;
+            if (ep && sec > 3) {
+              setWatchProgress({ episodeSlug: ep, time: sec });
+            }
+          }
+        });
+      }
     }
     
     setIsBookmarked(isFavorite(slug));

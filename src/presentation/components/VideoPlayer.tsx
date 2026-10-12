@@ -148,6 +148,8 @@ function HLSPlayer({
   
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
+  const targetResumeRef = useRef<number>(0);
+  const hasResumedRef = useRef<boolean>(false);
 
   const [hoverPos, setHoverPos] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number>(0);
@@ -231,6 +233,9 @@ function HLSPlayer({
 
     const saveCurrentProgress = (force = false) => {
       if (!video || video.currentTime <= 5) return;
+      // QUAN TRỌNG: Không lưu đè nếu phim có tiến độ cũ nhưng video chưa kịp seek
+      if (targetResumeRef.current > 5 && !hasResumedRef.current) return;
+
       const progress = {
         episodeSlug,
         time: video.currentTime,
@@ -279,11 +284,11 @@ function HLSPlayer({
     setSlowNetworkWarning(false);
 
     // Quản lý thời điểm tua tiếp tục xem phim (Resume)
-    let hasResumed = false;
-    let targetResume = 0;
+    targetResumeRef.current = 0;
+    hasResumedRef.current = false;
 
     const doSeek = (targetTime: number) => {
-      if (hasResumed || targetTime <= 5) return;
+      if (hasResumedRef.current || targetTime <= 3) return;
       const v = videoRef.current;
       if (!v) return;
 
@@ -291,12 +296,19 @@ function HLSPlayer({
         try {
           if (!v.duration || targetTime < v.duration * 0.95) {
             v.currentTime = targetTime;
-            hasResumed = true;
+            hasResumedRef.current = true;
           }
         } catch (e) {
           console.warn('[VideoPlayer] Lỗi seek vị trí xem tiếp:', e);
         }
       }
+    };
+
+    const isEpisodeMatch = (savedEp?: string | null, currentEp?: string | null) => {
+      if (!savedEp || !currentEp) return false;
+      if (savedEp === currentEp) return true;
+      const norm = (s: string) => s.toLowerCase().replace(/^(tap-|t-|ep-|episode-)?0*/, '');
+      return norm(savedEp) === norm(currentEp);
     };
 
     // Lấy tiến độ đã lưu cho tập phim này
@@ -305,12 +317,15 @@ function HLSPlayer({
       if (activeUserId) {
         // NẾU ĐÃ NHẬP ID: Lấy tiến độ trực tiếp từ Supabase API
         fetchUserHistory(activeUserId, movieSlug).then((item: any) => {
-          if (item && item.episode_slug === episodeSlug) {
-            const raw = Number(item.position) || 0;
-            const sec = raw >= 1000 ? raw / 1000 : raw;
-            if (sec > 5) {
-              targetResume = sec;
-              doSeek(targetResume);
+          if (item) {
+            const ep = item.episodeSlug || item.episode_slug;
+            if (isEpisodeMatch(ep, episodeSlug)) {
+              const raw = Number(item.position) || 0;
+              const sec = raw >= 1000 ? raw / 1000 : raw;
+              if (sec > 3) {
+                targetResumeRef.current = sec;
+                doSeek(sec);
+              }
             }
           }
         });
@@ -321,25 +336,28 @@ function HLSPlayer({
           if (savedData) {
             const progress = JSON.parse(savedData);
             if (
-              progress.episodeSlug === episodeSlug &&
-              progress.time > 5 &&
+              isEpisodeMatch(progress.episodeSlug, episodeSlug) &&
+              progress.time > 3 &&
               (!progress.duration || progress.time < progress.duration * 0.95)
             ) {
-              targetResume = progress.time;
-              doSeek(targetResume);
+              targetResumeRef.current = progress.time;
+              doSeek(progress.time);
             }
           }
         } catch (e) {}
 
         // Fallback kiểm tra online theo deviceId nếu local chưa có
-        if (targetResume === 0) {
+        if (targetResumeRef.current === 0) {
           fetchOnlineWatchHistory(movieSlug).then((item: any) => {
-            if (item && item.episode_slug === episodeSlug) {
-              const raw = Number(item.position) || 0;
-              const sec = raw >= 1000 ? raw / 1000 : raw;
-              if (sec > 5) {
-                targetResume = sec;
-                doSeek(targetResume);
+            if (item) {
+              const ep = item.episodeSlug || item.episode_slug;
+              if (isEpisodeMatch(ep, episodeSlug)) {
+                const raw = Number(item.position) || 0;
+                const sec = raw >= 1000 ? raw / 1000 : raw;
+                if (sec > 3) {
+                  targetResumeRef.current = sec;
+                  doSeek(sec);
+                }
               }
             }
           });
@@ -347,13 +365,16 @@ function HLSPlayer({
       }
     }
 
-    const onMetadataLoaded = () => {
-      if (targetResume > 5) {
-        doSeek(targetResume);
+    const onCanResume = () => {
+      if (!hasResumedRef.current && targetResumeRef.current > 3) {
+        doSeek(targetResumeRef.current);
       }
     };
-    video.addEventListener('loadedmetadata', onMetadataLoaded);
-    video.addEventListener('canplay', onMetadataLoaded);
+    video.addEventListener('loadedmetadata', onCanResume);
+    video.addEventListener('loadeddata', onCanResume);
+    video.addEventListener('canplay', onCanResume);
+    video.addEventListener('playing', onCanResume);
+    video.addEventListener('timeupdate', onCanResume);
 
     // Network delay warning timer (8 seconds)
     const slowTimer = setTimeout(() => {
@@ -382,8 +403,8 @@ function HLSPlayer({
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsLoading(false);
         setSlowNetworkWarning(false);
-        if (targetResume > 5) {
-          doSeek(targetResume);
+        if (targetResumeRef.current > 3) {
+          doSeek(targetResumeRef.current);
         }
         video.play().then(() => setIsPlaying(true)).catch(() => {});
       });
@@ -425,8 +446,8 @@ function HLSPlayer({
       onNativeLoaded = () => {
         setIsLoading(false);
         setSlowNetworkWarning(false);
-        if (targetResume > 5) {
-          doSeek(targetResume);
+        if (targetResumeRef.current > 3) {
+          doSeek(targetResumeRef.current);
         }
         video.play().then(() => setIsPlaying(true)).catch(() => {});
       };
@@ -444,8 +465,11 @@ function HLSPlayer({
       clearTimeout(slowTimer);
       hls?.destroy();
       if (video) {
-        video.removeEventListener('loadedmetadata', onMetadataLoaded);
-        video.removeEventListener('canplay', onMetadataLoaded);
+        video.removeEventListener('loadedmetadata', onCanResume);
+        video.removeEventListener('loadeddata', onCanResume);
+        video.removeEventListener('canplay', onCanResume);
+        video.removeEventListener('playing', onCanResume);
+        video.removeEventListener('timeupdate', onCanResume);
         if (onNativeLoaded) video.removeEventListener('loadedmetadata', onNativeLoaded);
         if (onNativeError) video.removeEventListener('error', onNativeError);
         video.pause();

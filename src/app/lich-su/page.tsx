@@ -34,7 +34,7 @@ export default function HistoryPage() {
             year: 0,
             quality: 'HD',
             lang: '',
-            episodeCurrent: item.episode_slug ? `Tập ${item.episode_slug.replace('tap-', '')}` : '',
+            episodeCurrent: (item.episodeSlug || item.episode_slug) ? `Tập ${(item.episodeSlug || item.episode_slug).replace('tap-', '')}` : '',
             episodeTotal: '',
             time: '',
             description: '',
@@ -47,9 +47,9 @@ export default function HistoryPage() {
             imdbId: '',
             imdbVoteCount: 0,
             source: item.source as any,
-            serverIndex: item.server_index ?? item.serverIndex ?? 0,
-            episodeIndex: item.episode_index ?? item.episodeIndex ?? 0,
-            lastEpisodeSlug: item.episode_slug || undefined,
+            serverIndex: item.serverIndex ?? item.server_index ?? 0,
+            episodeIndex: item.episodeIndex ?? item.episode_index ?? 0,
+            lastEpisodeSlug: item.episodeSlug || item.episode_slug || undefined,
             lastTime: Number(item.position) || 0,
             lastDuration: Number(item.duration) || 0,
           }));
@@ -67,16 +67,16 @@ export default function HistoryPage() {
         if (Array.isArray(onlineItems) && onlineItems.length > 0) {
           const remoteMovies: Movie[] = onlineItems.map((item) => ({
             id: String(item.id || item.slug),
-            name: item.movie_name || item.slug,
+            name: item.movieName || item.movie_name || item.slug,
             slug: item.slug,
             originName: '',
             type: 'single',
-            posterUrl: item.poster_url || '',
-            thumbUrl: item.thumb_url || item.poster_url || '',
+            posterUrl: item.posterUrl || item.poster_url || '',
+            thumbUrl: item.thumbUrl || item.thumb_url || item.posterUrl || item.poster_url || '',
             year: 0,
             quality: 'HD',
             lang: '',
-            episodeCurrent: item.episode_slug ? `Tập ${item.episode_slug.replace('tap-', '')}` : '',
+            episodeCurrent: (item.episodeSlug || item.episode_slug) ? `Tập ${(item.episodeSlug || item.episode_slug).replace('tap-', '')}` : '',
             episodeTotal: '',
             time: '',
             description: '',
@@ -89,9 +89,9 @@ export default function HistoryPage() {
             imdbId: '',
             imdbVoteCount: 0,
             source: item.source as any,
-            lastEpisodeSlug: item.episode_slug || undefined,
-            lastTime: item.position,
-            lastDuration: item.duration,
+            lastEpisodeSlug: item.episodeSlug || item.episode_slug || undefined,
+            lastTime: Number(item.position) || 0,
+            lastDuration: Number(item.duration) || 0,
           }));
 
           const mergedMap = new Map<string, Movie>();
@@ -189,7 +189,7 @@ export default function HistoryPage() {
         {movies.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
             {movies.map((movie, i) => (
-              <MovieCard key={`${movie.slug}-${i}`} movie={movie} index={i} />
+              <MovieCard key={`${movie.slug}-${i}`} movie={movie} index={i} preferWatchUrl={true} />
             ))}
           </div>
         ) : (

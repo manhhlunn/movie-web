@@ -56,10 +56,10 @@ export default function WatchClient({
   const streamInfo = useStreamLink(combinedMovie, currentEpisodeSlug, selectedServerName);
 
   useEffect(() => {
-    if (movie) {
-      addToHistory(movie);
+    if (movie && currentEpisodeSlug) {
+      addToHistory(movie, currentEpisodeSlug);
     }
-  }, [movie]);
+  }, [movie, currentEpisodeSlug]);
 
   const handleEpisodeChange = (newEpisodeSlug: string, serverName?: string) => {
     setCurrentEpisodeSlug(newEpisodeSlug);

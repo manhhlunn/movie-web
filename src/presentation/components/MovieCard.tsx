@@ -12,13 +12,21 @@ interface MovieCardProps {
   index?: number;
   className?: string;
   source?: 'ophim' | 'phimapi' | 'nguonc';
+  preferWatchUrl?: boolean;
 }
 
-const MovieCard = memo(({ movie, className, source: propsSource }: MovieCardProps) => {
+const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl }: MovieCardProps) => {
   const initialSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.svg';
   const [imgSrc, setImgSrc] = useState(initialSrc);
   const effectiveSource = movie.source || propsSource;
-  const href = `/phim/${movie.slug}${effectiveSource ? `?source=${effectiveSource}` : ''}`;
+  const hasProgress = !!movie.lastEpisodeSlug;
+  const href = (preferWatchUrl && hasProgress)
+    ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}${effectiveSource ? `?source=${effectiveSource}` : ''}`
+    : `/phim/${movie.slug}${effectiveSource ? `?source=${effectiveSource}` : ''}`;
+
+  const percent = (movie.lastTime && movie.lastDuration && movie.lastDuration > 0)
+    ? Math.min(100, Math.max(3, Math.round((movie.lastTime / movie.lastDuration) * 100)))
+    : 0;
 
   // Sync state if movie prop changes
   useEffect(() => {
@@ -76,6 +84,13 @@ const MovieCard = memo(({ movie, className, source: propsSource }: MovieCardProp
               {movie.name}
             </h3>
           </div>
+
+          {/* Progress bar if movie has progress */}
+          {percent > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20 z-20">
+              <div className="h-full bg-red-600" style={{ width: `${percent}%` }} />
+            </div>
+          )}
 
           {/* Hover info overlay — Pure CSS group-hover for maximum performance */}
           <div
