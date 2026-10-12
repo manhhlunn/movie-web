@@ -7,8 +7,8 @@ Tài liệu chi tiết về hệ thống API Lịch sử xem phim (Watch History
 ## 📌 1. Nguyên tắc thiết kế (Core Conventions)
 
 1. **Chuẩn hóa Key JSON**:
-   * Tất cả các trường trả về đều theo chuẩn **camelCase** duy nhất (ví dụ: `serverIndex`, `episodeIndex`, `playerIndex`, `movieName`, `posterUrl`, `createdAt`).
-   * Không trả trường trùng lặp dạng snake_case.
+   * Tất cả các trường trả về đều theo chuẩn **camelCase** duy nhất (ví dụ: `serverIndex`, `episodeIndex`, `movieName`, `posterUrl`, `createdAt`).
+   * Không trả trường trùng lặp dạng snake_case hay alias dư thừa.
 
 2. **Đơn vị thời gian (Time Format)**:
    * `position` và `duration` được tính bằng **mili-giây (ms)** dưới dạng số nguyên (`Long` trong Kotlin / Java, `number` trong TypeScript).
@@ -17,8 +17,8 @@ Tài liệu chi tiết về hệ thống API Lịch sử xem phim (Watch History
 3. **Cơ chế quản lý Tập phim (Episode Handling)**:
    * **`episodeSlug` KHÔNG lưu trong cơ sở dữ liệu (Database)** và **KHÔNG trả về từ API lịch sử**.
    * Client (Web / Android / iOS) lấy `episodeSlug` trực tiếp từ:
-     $$\text{episodeSlug} = \text{movie.servers}[\text{serverIndex}].\text{episodes}[\text{playerIndex}].\text{slug}$$
-   * Request gửi lên hỗ trợ cả `playerIndex` hoặc `episodeIndex` (chỉ số 0-indexed của tập phim trong server đang chọn).
+     $$\text{episodeSlug} = \text{movie.servers}[\text{serverIndex}].\text{episodes}[\text{episodeIndex}].\text{slug}$$
+   * Request gửi lên sử dụng `episodeIndex` (chỉ số 0-indexed của tập phim trong server đang chọn).
 
 ---
 
@@ -42,7 +42,7 @@ Content-Type: application/json
 | `slug` | string | **Bắt buộc** | Slug định danh phim (ví dụ: `sat-thu-noi-tro-vo-toi-la-sat-thu`) |
 | `source` | string | **Bắt buộc** | Nguồn phim (`phimapi`, `ophim`, `nguonc`, `vsmov`) |
 | `serverIndex` | integer | Tùy chọn | Vị trí server đang xem (mặc định: `0`) |
-| `playerIndex` | integer | Tùy chọn | Vị trí tập phim trong server đang xem (mặc định: `0`) (có thể dùng alias `episodeIndex`) |
+| `episodeIndex` | integer | Tùy chọn | Vị trí tập phim trong server đang xem (0-indexed, mặc định: `0`) |
 | `position` | integer (Long) | **Bắt buộc** | Thời điểm đã xem tính bằng **mili-giây** (ví dụ: `3343061`) |
 | `duration` | integer (Long) | Tùy chọn | Tổng thời lượng video tính bằng **mili-giây** (ví dụ: `3754040`) |
 | `movieName` | string | Tùy chọn | Tên phim |
@@ -59,7 +59,7 @@ Content-Type: application/json
   "slug": "sat-thu-noi-tro-vo-toi-la-sat-thu",
   "source": "phimapi",
   "serverIndex": 0,
-  "playerIndex": 2,
+  "episodeIndex": 2,
   "position": 3343061,
   "duration": 3754040,
   "movieName": "Sát Thủ Nội Trợ: Vợ Tôi Là Sát Thủ",
@@ -80,7 +80,6 @@ Content-Type: application/json
     "source": "phimapi",
     "serverIndex": 0,
     "episodeIndex": 2,
-    "playerIndex": 2,
     "position": 3343061,
     "duration": 3754040,
     "movieName": "Sát Thủ Nội Trợ: Vợ Tôi Là Sát Thủ",
@@ -119,7 +118,6 @@ Response:
     "source": "phimapi",
     "serverIndex": 0,
     "episodeIndex": 2,
-    "playerIndex": 2,
     "position": 3343061,
     "duration": 3754040,
     "movieName": "Sát Thủ Nội Trợ: Vợ Tôi Là Sát Thủ",
@@ -149,7 +147,6 @@ Response:
       "source": "phimapi",
       "serverIndex": 0,
       "episodeIndex": 2,
-      "playerIndex": 2,
       "position": 3343061,
       "duration": 3754040,
       "movieName": "Sát Thủ Nội Trợ: Vợ Tôi Là Sát Thủ",
@@ -193,7 +190,7 @@ Dành riêng cho client truyền `userId` trực tiếp qua đường dẫn URL:
 ## 📱 3. Hướng dẫn tích hợp phía Client (Android / Kotlin / Web)
 
 ### 3.1. Cách lấy `episodeSlug` để phát video
-Khi nhận dữ liệu lịch sử từ API, client không tìm `episodeSlug` trong response mà dùng `detail + serverIndex + playerIndex`:
+Khi nhận dữ liệu lịch sử từ API, client không tìm `episodeSlug` trong response mà dùng `detail + serverIndex + episodeIndex`:
 
 ```kotlin
 // Kotlin ví dụ
@@ -201,7 +198,7 @@ fun getEpisodeToPlay(movieDetail: MovieDetail, historyItem: HistoryItem): Episod
     val server = movieDetail.servers.getOrNull(historyItem.serverIndex) 
         ?: movieDetail.servers.first()
         
-    val episode = server.episodes.getOrNull(historyItem.playerIndex) 
+    val episode = server.episodes.getOrNull(historyItem.episodeIndex) 
         ?: server.episodes.first()
         
     // episode.slug chính là slug tập phim cần phát
@@ -231,7 +228,7 @@ val payload = HistoryPayload(
     slug = movieDetail.slug,
     source = movieDetail.source,
     serverIndex = currentServerIndex,
-    playerIndex = currentPlayerIndex,
+    episodeIndex = currentEpisodeIndex,
     position = currentPosMs,
     duration = durationMs,
     movieName = movieDetail.name,

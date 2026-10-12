@@ -63,11 +63,11 @@ export default function MovieDetailClient({
       fetchUserHistory(activeUserId, slug).then((item: any) => {
         if (item) {
           const sIdx = item.serverIndex ?? item.server_index ?? 0;
-          const pIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+          const epIdx = item.episodeIndex ?? item.episode_index ?? 0;
           const targetSlug =
             item.episodeSlug ||
             item.episode_slug ||
-            getEpisodeSlugFromDetail(effectiveMovie, sIdx, pIdx);
+            getEpisodeSlugFromDetail(effectiveMovie, sIdx, epIdx);
           const pos = Number(item.position) || 0;
           const sec = pos >= 1000 ? pos / 1000 : pos;
           if (targetSlug && sec > 3) {
@@ -85,11 +85,11 @@ export default function MovieDetailClient({
         fetchOnlineWatchHistory(slug).then((item: any) => {
           if (item) {
             const sIdx = item.serverIndex ?? item.server_index ?? 0;
-            const pIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+            const epIdx = item.episodeIndex ?? item.episode_index ?? 0;
             const targetSlug =
               item.episodeSlug ||
               item.episode_slug ||
-              getEpisodeSlugFromDetail(effectiveMovie, sIdx, pIdx);
+              getEpisodeSlugFromDetail(effectiveMovie, sIdx, epIdx);
             const pos = Number(item.position) || 0;
             const sec = pos >= 1000 ? pos / 1000 : pos;
             if (targetSlug && sec > 3) {

@@ -47,12 +47,12 @@ export function isEpisodeMatch(
 }
 
 /**
- * Lấy episodeSlug trực tiếp từ thông tin chi tiết phim (detail) + serverIndex + playerIndex
+ * Lấy episodeSlug trực tiếp từ thông tin chi tiết phim (detail) + serverIndex + episodeIndex
  */
 export function getEpisodeSlugFromDetail(
   movie?: any,
   serverIndex = 0,
-  playerIndex = 0
+  episodeIndex = 0
 ): string {
   if (!movie || !movie.servers || !movie.servers.length) {
     return 'tap-1';
@@ -62,7 +62,7 @@ export function getEpisodeSlugFromDetail(
   if (!server || !server.episodes || !server.episodes.length) {
     return 'tap-1';
   }
-  const epIdx = Math.max(0, Math.min(Number(playerIndex) || 0, server.episodes.length - 1));
+  const epIdx = Math.max(0, Math.min(Number(episodeIndex) || 0, server.episodes.length - 1));
   const episode = server.episodes[epIdx];
   return episode?.slug || episode?.name || 'tap-1';
 }

@@ -344,7 +344,7 @@ function HLSPlayer({
             clearTimeout(historyFetchTimeout);
             if (item) {
               const savedServerIdx = item.serverIndex ?? item.server_index ?? 0;
-              const savedEpIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+              const savedEpIdx = item.episodeIndex ?? item.episode_index ?? 0;
               const isMatch =
                 isSingle ||
                 (savedServerIdx === serverIndex && savedEpIdx === episodeIndex) ||
@@ -376,7 +376,7 @@ function HLSPlayer({
               clearTimeout(historyFetchTimeout);
               if (item) {
                 const savedServerIdx = item.serverIndex ?? item.server_index ?? 0;
-                const savedEpIdx = item.playerIndex ?? item.player_index ?? item.episodeIndex ?? item.episode_index ?? 0;
+                const savedEpIdx = item.episodeIndex ?? item.episode_index ?? 0;
                 const isMatch =
                   isSingle ||
                   (savedServerIdx === serverIndex && savedEpIdx === episodeIndex) ||

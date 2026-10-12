@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.watch_history (
     slug TEXT NOT NULL,                      -- Slug phim (duy nhất theo sync_id)
     source TEXT NOT NULL,                    -- Nguồn phim: 'phimapi', 'ophim', 'nguonc', 'vsmov'
     server_index INTEGER NOT NULL DEFAULT 0, -- Vị trí server đang xem (0, 1, 2...)
-    episode_index INTEGER NOT NULL DEFAULT 0,-- Vị trí tập phim / playerIndex trong server (0, 1, 2...)
+    episode_index INTEGER NOT NULL DEFAULT 0,-- Vị trí tập phim trong server (0, 1, 2...)
     position NUMERIC NOT NULL DEFAULT 0,     -- Thời điểm đã xem (mili-giây)
     duration NUMERIC NOT NULL DEFAULT 0,     -- Tổng thời lượng tập phim (mili-giây)
     movie_name TEXT,                         -- Tên phim (để hiển thị nhanh trên UI)

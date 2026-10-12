@@ -31,7 +31,6 @@ function formatHistoryRow(row: any) {
     source: row.source,
     serverIndex: row.server_index ?? row.serverIndex ?? 0,
     episodeIndex: row.episode_index ?? row.episodeIndex ?? 0,
-    playerIndex: row.episode_index ?? row.episodeIndex ?? 0,
     position: positionMs,
     duration: durationMs,
     movieName,
