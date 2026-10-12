@@ -30,16 +30,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function ExplorePage({ params }: Props) {
+export default async function ExplorePage({ params }: Props) {
+  const { type } = await params;
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
-      {params.then(({ type }) => (
-        <SharedExplorePage 
-          filterType="danh-sach" 
-          slug={type} 
-          title={TITLES[type] || 'Danh sách phim'} 
-        />
-      ))}
+      <SharedExplorePage 
+        filterType="danh-sach" 
+        slug={type} 
+        title={TITLES[type] || 'Danh sách phim'} 
+      />
     </Suspense>
   );
 }

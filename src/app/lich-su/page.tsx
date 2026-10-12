@@ -2,23 +2,144 @@
 
 import { useState, useEffect } from 'react';
 import { getHistory } from '@/lib/userStore';
+import { fetchOnlineWatchHistory, deleteOnlineWatchHistory, getUserId, fetchUserHistory, deleteUserHistory } from '@/lib/syncHistory';
 import { Movie } from '@/domain/entities/Movie';
 import MovieCard from '@/presentation/components/MovieCard';
-import { Clock, Home, Trash2 } from 'lucide-react';
+import { Clock, Home, Trash2, Cloud, HardDrive } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
 export default function HistoryPage() {
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    setMovies(getHistory());
+    const loadHistory = async () => {
+      const userId = getUserId();
+      setCurrentUserId(userId);
+
+      if (userId) {
+        // NẾU CÓ USER ID: LẤY TRỰC TIẾP TỪ SUPABASE API
+        const onlineItems = await fetchUserHistory(userId);
+        if (Array.isArray(onlineItems)) {
+          const remoteMovies: Movie[] = onlineItems.map((item: any) => ({
+            id: String(item.id || item.slug),
+            name: item.movie_name || item.movieName || item.slug,
+            movieName: item.movie_name || item.movieName || item.slug,
+            slug: item.slug,
+            originName: '',
+            type: 'single',
+            posterUrl: item.poster_url || item.posterUrl || '',
+            thumbUrl: item.thumb_url || item.thumbUrl || item.poster_url || '',
+            year: 0,
+            quality: 'HD',
+            lang: '',
+            episodeCurrent: item.episode_slug ? `Tập ${item.episode_slug.replace('tap-', '')}` : '',
+            episodeTotal: '',
+            time: '',
+            description: '',
+            categories: [],
+            countries: [],
+            actors: [],
+            directors: [],
+            tmdbVoteAverage: 0,
+            imdbRating: 0,
+            imdbId: '',
+            imdbVoteCount: 0,
+            source: item.source as any,
+            serverIndex: item.server_index ?? item.serverIndex ?? 0,
+            episodeIndex: item.episode_index ?? item.episodeIndex ?? 0,
+            lastEpisodeSlug: item.episode_slug || undefined,
+            lastTime: Number(item.position) || 0,
+            lastDuration: Number(item.duration) || 0,
+          }));
+          setMovies(remoteMovies);
+          return;
+        }
+      }
+
+      // CHƯA NHẬP ID: Lấy lịch sử cục bộ
+      const local = getHistory();
+      setMovies(local);
+
+      // Thử đồng bộ online với deviceId
+      fetchOnlineWatchHistory().then((onlineItems: any) => {
+        if (Array.isArray(onlineItems) && onlineItems.length > 0) {
+          const remoteMovies: Movie[] = onlineItems.map((item) => ({
+            id: String(item.id || item.slug),
+            name: item.movie_name || item.slug,
+            slug: item.slug,
+            originName: '',
+            type: 'single',
+            posterUrl: item.poster_url || '',
+            thumbUrl: item.thumb_url || item.poster_url || '',
+            year: 0,
+            quality: 'HD',
+            lang: '',
+            episodeCurrent: item.episode_slug ? `Tập ${item.episode_slug.replace('tap-', '')}` : '',
+            episodeTotal: '',
+            time: '',
+            description: '',
+            categories: [],
+            countries: [],
+            actors: [],
+            directors: [],
+            tmdbVoteAverage: 0,
+            imdbRating: 0,
+            imdbId: '',
+            imdbVoteCount: 0,
+            source: item.source as any,
+            lastEpisodeSlug: item.episode_slug || undefined,
+            lastTime: item.position,
+            lastDuration: item.duration,
+          }));
+
+          const mergedMap = new Map<string, Movie>();
+          local.forEach((m) => mergedMap.set(m.slug, m));
+          remoteMovies.forEach((m) => {
+            const existing = mergedMap.get(m.slug);
+            if (existing) {
+              mergedMap.set(m.slug, {
+                ...existing,
+                source: m.source || existing.source,
+                lastEpisodeSlug: m.lastEpisodeSlug || existing.lastEpisodeSlug,
+                lastTime: m.lastTime || existing.lastTime,
+                lastDuration: m.lastDuration || existing.lastDuration,
+              });
+            } else {
+              mergedMap.set(m.slug, m);
+            }
+          });
+
+          const mergedList = Array.from(mergedMap.values());
+          setMovies(mergedList);
+          localStorage.setItem('user_history', JSON.stringify(mergedList));
+        }
+      });
+    };
+
+    loadHistory();
+    window.addEventListener('movie-history-changed', loadHistory);
+    window.addEventListener('movie-user-changed', loadHistory);
+    return () => {
+      window.removeEventListener('movie-history-changed', loadHistory);
+      window.removeEventListener('movie-user-changed', loadHistory);
+    };
   }, []);
 
   const clearHistory = () => {
     if (confirm('Bạn có chắc muốn xoá toàn bộ lịch sử xem phim?')) {
-      localStorage.setItem('user_history', JSON.stringify([]));
+      const userId = getUserId();
+      if (userId) {
+        deleteUserHistory(userId);
+      } else {
+        localStorage.setItem('user_history', JSON.stringify([]));
+        deleteOnlineWatchHistory();
+      }
       setMovies([]);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('movie-history-changed'));
+      }
     }
   };
 
@@ -32,7 +153,17 @@ export default function HistoryPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-white">Phim đã xem</h1>
-              <p className="text-zinc-500 text-sm mt-1">Lịch sử các phim bạn đã từng xem</p>
+              {currentUserId ? (
+                <div className="flex items-center gap-1.5 text-xs sm:text-sm text-emerald-400 mt-1 font-medium">
+                  <Cloud className="w-4 h-4 text-emerald-400" />
+                  <span>Đồng bộ Supabase Cloud với ID: <strong className="font-mono text-white underline">{currentUserId}</strong> (Không lưu ở máy này)</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs sm:text-sm text-zinc-400 mt-1">
+                  <HardDrive className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Đang lưu cục bộ trên thiết bị này (Chưa đăng nhập ID)</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3">

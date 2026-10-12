@@ -17,12 +17,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function YearPage({ params }: Props) {
+export default async function YearPage({ params }: Props) {
+  const { slug } = await params;
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
-      {params.then(({ slug }) => (
-        <SharedExplorePage filterType="nam-phat-hanh" slug={slug} title={`Phim Năm Phát Hành ${slug}`} />
-      ))}
+      <SharedExplorePage filterType="nam-phat-hanh" slug={slug} title={`Phim Năm Phát Hành ${slug}`} />
     </Suspense>
   );
 }

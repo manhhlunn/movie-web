@@ -14,22 +14,19 @@ interface MovieCardProps {
   source?: 'ophim' | 'phimapi' | 'nguonc';
 }
 
-const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: MovieCardProps) => {
-  const [isHovered, setIsHovered] = useState(false);
-  const initialSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.jpg';
+const MovieCard = memo(({ movie, className, source: propsSource }: MovieCardProps) => {
+  const initialSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.svg';
   const [imgSrc, setImgSrc] = useState(initialSrc);
   const effectiveSource = movie.source || propsSource;
   const href = `/phim/${movie.slug}${effectiveSource ? `?source=${effectiveSource}` : ''}`;
 
   // Sync state if movie prop changes
   useEffect(() => {
-    setImgSrc(movie.posterUrl || movie.thumbUrl || '/placeholder-poster.jpg');
+    setImgSrc(movie.posterUrl || movie.thumbUrl || '/placeholder-poster.svg');
   }, [movie.posterUrl, movie.thumbUrl]);
 
   return (
     <div
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       className={cn(
         'group relative flex-shrink-0 cursor-pointer rounded-lg overflow-hidden bg-zinc-900',
         'transition-all duration-300 hover:scale-105 hover:z-30 hover:shadow-2xl hover:shadow-black/70',
@@ -42,16 +39,14 @@ const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: Mo
             src={imgSrc}
             alt={movie.name}
             fill
-            sizes="(max-width: 640px) 33vw, (max-width: 1024px) 20vw, 12vw"
+            sizes="(max-width: 640px) 170px, (max-width: 1024px) 230px, 260px"
             quality={75}
-            priority={index < 2}
-            loading={index < 6 ? 'eager' : 'lazy'}
             className="object-cover transition-all duration-500 group-hover:scale-110"
             onError={() => {
               if (imgSrc !== movie.thumbUrl && movie.thumbUrl) {
                 setImgSrc(movie.thumbUrl);
-              } else if (imgSrc !== '/placeholder-poster.jpg') {
-                setImgSrc('/placeholder-poster.jpg');
+              } else if (imgSrc !== '/placeholder-poster.svg') {
+                setImgSrc('/placeholder-poster.svg');
               }
             }}
           />
@@ -82,13 +77,12 @@ const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: Mo
             </h3>
           </div>
 
-          {/* Hover info overlay */}
+          {/* Hover info overlay — Pure CSS group-hover for maximum performance */}
           <div
             className={cn(
               'absolute inset-0 z-30 flex flex-col justify-end p-2.5',
               'bg-gradient-to-t from-black/95 via-black/70 to-black/30',
-              'transition-opacity duration-300',
-              isHovered ? 'opacity-100' : 'opacity-0'
+              'transition-opacity duration-300 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto'
             )}
           >
             {/* Play button */}
@@ -100,7 +94,7 @@ const MovieCard = memo(({ movie, index = 0, className, source: propsSource }: Mo
 
             {/* Metadata chips */}
             <div className="space-y-1.5 mt-auto">
-              <h3 className="text-[13px] font-bold text-white leading-snug line-clamp-2">
+              <h3 aria-hidden="true" className="text-[13px] font-bold text-white leading-snug line-clamp-2">
                 {movie.name}
               </h3>
               <div className="flex flex-wrap gap-1">

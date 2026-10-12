@@ -7,6 +7,7 @@ import { Search, X, Menu, Film } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import UserSyncModal from '@/presentation/components/UserSyncModal';
 
 const NAV_LINKS = [
   { href: '/', label: 'Trang chủ' },
@@ -150,8 +151,10 @@ export default function Navbar() {
             </div>
           </div>
 
-          {/* Right: Search + Mobile Menu */}
+          {/* Right: UserSyncModal + Search + Mobile Menu */}
           <div className="flex items-center gap-2">
+            <UserSyncModal />
+
             {/* Search */}
             <AnimatePresence>
               {searchOpen ? (

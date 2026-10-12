@@ -9,13 +9,24 @@ import { Skeleton } from '@/presentation/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { addToHistory } from '@/lib/userStore';
 
+import { Movie } from '@/domain/entities/Movie';
 import { useSearchParams } from 'next/navigation';
 
-export default function WatchClient({ slug, episode }: { slug: string; episode: string }) {
+export default function WatchClient({
+  slug,
+  episode,
+  initialMovie,
+}: {
+  slug: string;
+  episode: string;
+  initialMovie?: Movie | null;
+}) {
   const searchParams = useSearchParams();
-  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || 'phimapi';
+  const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || initialMovie?.source || 'phimapi';
 
-  const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug, sourceParam);
+  const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug, sourceParam, {
+    initialData: initialMovie,
+  });
   const { data: extraSources } = useMovieExtraSources(movie, sourceParam);
 
   const combinedMovie = useMemo(() => {
@@ -88,6 +99,17 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
     }
   }
 
+  // Active server and episode indexes
+  const activeServerName = selectedServerName || streamInfo?.serverName || combinedMovie?.servers?.[0]?.serverName;
+  const serverIndex = combinedMovie?.servers
+    ? Math.max(0, combinedMovie.servers.findIndex((s) => s.serverName === activeServerName))
+    : 0;
+
+  const currentServer = combinedMovie?.servers?.[serverIndex];
+  const episodeIndex = currentServer?.episodes
+    ? Math.max(0, currentServer.episodes.findIndex((e) => e.slug === currentEpisodeSlug))
+    : 0;
+
   if (isMovieLoading) {
     return (
       <div className="container py-10 max-w-7xl">
@@ -142,6 +164,9 @@ export default function WatchClient({ slug, episode }: { slug: string; episode: 
             poster={combinedMovie.posterUrl || combinedMovie.thumbUrl}
             movieSlug={slug}
             episodeSlug={currentEpisodeSlug}
+            serverIndex={serverIndex}
+            episodeIndex={episodeIndex}
+            source={sourceParam}
             movie={combinedMovie}
             nextEpisodeUrl={nextEpisodeSlug ? `/xem-phim/${slug}/${nextEpisodeSlug}${sourceParam ? `?source=${sourceParam}` : ''}` : undefined}
             onNextEpisode={nextEpisodeSlug ? () => handleEpisodeChange(nextEpisodeSlug!, selectedServerName) : undefined}

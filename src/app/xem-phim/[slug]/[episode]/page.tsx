@@ -6,31 +6,39 @@ import { PlayerSkeleton } from '@/presentation/components/Skeleton';
 
 interface Props {
   params: Promise<{ slug: string; episode: string }>;
+  searchParams?: Promise<{ source?: string }>;
 }
 
-
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug, episode } = await params;
-  
+  const sParams = searchParams ? await searchParams : {};
+  const sourceParam = (sParams.source as 'phimapi' | 'ophim' | 'nguonc' | 'vsmov') || 'phimapi';
+
   try {
-    const movie = await getMovieDetails(slug);
+    const movie = await getMovieDetails(slug, sourceParam);
     if (!movie) return { title: 'Không tìm thấy phim' };
 
     return {
       title: `Tập ${episode} - ${movie.name}`,
       description: `Xem tập ${episode} phim ${movie.name} chất lượng cao vietsub thuyết minh.`,
+      openGraph: {
+        images: [movie.posterUrl || movie.thumbUrl],
+      },
     };
   } catch (error) {
     return { title: 'Lỗi' };
   }
 }
 
-export default function WatchPage({ params }: Props) {
+export default async function WatchPage({ params, searchParams }: Props) {
+  const { slug, episode } = await params;
+  const sParams = searchParams ? await searchParams : {};
+  const sourceParam = (sParams.source as 'phimapi' | 'ophim' | 'nguonc' | 'vsmov') || 'phimapi';
+  const movie = await getMovieDetails(slug, sourceParam);
+
   return (
     <Suspense fallback={<PlayerSkeleton />}>
-      {params.then(({ slug, episode }) => (
-        <WatchClient slug={slug} episode={episode} />
-      ))}
+      <WatchClient slug={slug} episode={episode} initialMovie={movie} />
     </Suspense>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, memo } from 'react';
+import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Movie } from '@/domain/entities/Movie';
 import MovieCard from './MovieCard';
@@ -50,12 +51,12 @@ const MovieSlider = memo(({
           {title}
         </h2>
         {seeMoreHref && (
-          <a
+          <Link
             href={seeMoreHref}
             className="text-sm text-zinc-400 hover:text-red-500 transition-colors font-medium"
           >
             Xem thêm →
-          </a>
+          </Link>
         )}
       </div>
 

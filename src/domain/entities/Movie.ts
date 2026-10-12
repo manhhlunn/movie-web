@@ -73,8 +73,12 @@ export interface Movie {
   /** Primary source tag */
   source?: 'ophim' | 'phimapi' | 'nguonc' | 'vsmov';
   /** Watch progress fields */
+  movieName?: string;
+  serverIndex?: number;
+  episodeIndex?: number;
   lastEpisodeSlug?: string;
   lastTime?: number;
+  lastDuration?: number;
 }
 
 export interface MovieListResult {

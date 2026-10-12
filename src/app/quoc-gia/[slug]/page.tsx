@@ -19,13 +19,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function CountryPage({ params }: Props) {
+export default async function CountryPage({ params }: Props) {
+  const { slug } = await params;
+  const title = `Phim Quốc Gia ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
-      {params.then(({ slug }) => {
-        const title = `Phim Quốc Gia ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
-        return <SharedExplorePage filterType="quoc-gia" slug={slug} title={title} />;
-      })}
+      <SharedExplorePage filterType="quoc-gia" slug={slug} title={title} />
     </Suspense>
   );
 }

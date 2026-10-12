@@ -3,15 +3,10 @@ import HeroSection from '@/presentation/components/HeroSection';
 import MovieSlider from '@/presentation/components/MovieSlider';
 import ContinueWatching from '@/presentation/components/ContinueWatching';
 import { Movie } from '@/domain/entities/Movie';
-import { headers } from 'next/headers';
 
-export default async function Home() {
-  // Truy cập Request Headers trước để Next.js biết đây là trang Dynamic, 
-  // cho phép sử dụng new Date() lấy năm hiện tại ở Server Component.
-  await headers();
+async function getHomeData() {
+  'use cache';
   const currentYear = new Date().getFullYear().toString();
-
-  // Fetch song song dữ liệu ở phía server
   const [data, heroData] = await Promise.all([
     getHomeMovies(),
     getExploreMovies('danh-sach', 'phim-bo', 1, {
@@ -19,6 +14,11 @@ export default async function Home() {
       year: currentYear,
     }).catch(() => null),
   ]);
+  return { data, heroData, currentYear };
+}
+
+export default async function Home() {
+  const { data, heroData, currentYear } = await getHomeData();
 
   if (!data) {
     return (

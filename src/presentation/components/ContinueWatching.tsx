@@ -2,30 +2,85 @@
 
 import { useEffect, useState } from 'react';
 import { Movie } from '@/domain/entities/Movie';
-import { getHistory } from '@/lib/userStore';
+import { getHistory, removeFromHistory } from '@/lib/userStore';
+import { deleteOnlineWatchHistory, getUserId, fetchUserHistory } from '@/lib/syncHistory';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play } from 'lucide-react';
+import { Play, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function ContinueWatching() {
   const [history, setHistory] = useState<Movie[]>([]);
 
+  const handleRemove = (e: React.MouseEvent, slug: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    removeFromHistory(slug);
+    setHistory((prev) => prev.filter((m) => m.slug !== slug));
+  };
+
   useEffect(() => {
-    const refreshHistory = () => {
+    const refreshHistory = async () => {
+      const userId = getUserId();
+      if (userId) {
+        // LẤY LỊCH SỬ TRỰC TIẾP TỪ SUPABASE API THEO ID
+        const onlineItems = await fetchUserHistory(userId);
+        if (Array.isArray(onlineItems)) {
+          const movies: Movie[] = onlineItems.map((item: any) => ({
+            id: String(item.id || item.slug),
+            name: item.movie_name || item.movieName || item.slug,
+            movieName: item.movie_name || item.movieName || item.slug,
+            slug: item.slug,
+            originName: '',
+            type: 'single',
+            posterUrl: item.poster_url || item.posterUrl || '',
+            thumbUrl: item.thumb_url || item.thumbUrl || item.poster_url || '',
+            year: 0,
+            quality: 'HD',
+            lang: '',
+            episodeCurrent: item.episode_slug ? `Tập ${item.episode_slug.replace('tap-', '')}` : '',
+            episodeTotal: '',
+            time: '',
+            description: '',
+            categories: [],
+            countries: [],
+            actors: [],
+            directors: [],
+            tmdbVoteAverage: 0,
+            imdbRating: 0,
+            imdbId: '',
+            imdbVoteCount: 0,
+            source: item.source as any,
+            serverIndex: item.server_index ?? item.serverIndex ?? 0,
+            episodeIndex: item.episode_index ?? item.episodeIndex ?? 0,
+            lastEpisodeSlug: item.episode_slug || item.episodeSlug || undefined,
+            lastTime: Number(item.position) || 0,
+            lastDuration: Number(item.duration) || 0,
+          }));
+          setHistory(movies.slice(0, 12));
+          return;
+        }
+      }
+
+      // Chưa nhập ID: Lấy lịch sử từ localStorage
       const data = getHistory();
-      // Show all history, but slice to top 10
       setHistory(data.slice(0, 12));
     };
 
     refreshHistory();
     window.addEventListener('focus', refreshHistory);
     window.addEventListener('pageshow', refreshHistory);
+    window.addEventListener('storage', refreshHistory);
+    window.addEventListener('movie-history-changed', refreshHistory);
+    window.addEventListener('movie-user-changed', refreshHistory);
     document.addEventListener('visibilitychange', refreshHistory);
 
     return () => {
       window.removeEventListener('focus', refreshHistory);
       window.removeEventListener('pageshow', refreshHistory);
+      window.removeEventListener('storage', refreshHistory);
+      window.removeEventListener('movie-history-changed', refreshHistory);
+      window.removeEventListener('movie-user-changed', refreshHistory);
       document.removeEventListener('visibilitychange', refreshHistory);
     };
   }, []);
@@ -49,21 +104,26 @@ export default function ContinueWatching() {
         >
           {history.map((movie) => {
             const hasProgress = !!movie.lastEpisodeSlug;
+            const sourceParam = movie.source ? `?source=${movie.source}` : '';
             const href = hasProgress 
-              ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}` 
-              : `/phim/${movie.slug}`;
+              ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}${sourceParam}` 
+              : `/phim/${movie.slug}${sourceParam}`;
+
+            const percent = (movie.lastTime && movie.lastDuration && movie.lastDuration > 0)
+              ? Math.min(100, Math.max(3, Math.round((movie.lastTime / movie.lastDuration) * 100)))
+              : 25;
 
             return (
               <motion.div
                 key={movie.slug}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex-none w-64 md:w-80 group"
+                className="flex-none w-64 md:w-80 group relative"
               >
                 <Link href={href} className="block relative">
                   <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 shadow-lg">
                     <Image
-                      src={movie.thumbUrl || movie.posterUrl || '/placeholder-poster.jpg'}
+                      src={movie.thumbUrl || movie.posterUrl || '/placeholder-poster.svg'}
                       alt={movie.name}
                       fill
                       sizes="(max-width: 768px) 256px, 320px"
@@ -76,12 +136,23 @@ export default function ContinueWatching() {
                       </div>
                     </div>
                     
+                    {/* Quick remove button */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleRemove(e, movie.slug)}
+                      className="absolute top-2 right-2 w-7 h-7 bg-black/70 hover:bg-red-600 text-zinc-300 hover:text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20 shadow-lg"
+                      title="Xóa khỏi danh sách xem tiếp"
+                      aria-label={`Xóa ${movie.name} khỏi danh sách xem tiếp`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+
                     {/* Progress Bar (only if has progress) */}
                     {hasProgress && (
                       <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
                         <div 
-                          className="h-full bg-red-600" 
-                          style={{ width: '40%' }} // Mock progress
+                          className="h-full bg-red-600 transition-all duration-300" 
+                          style={{ width: `${percent}%` }}
                         />
                       </div>
                     )}
@@ -93,7 +164,7 @@ export default function ContinueWatching() {
                     </h3>
                     <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider">
                       {hasProgress 
-                        ? `Tiếp tục: Tập ${movie.lastEpisodeSlug?.split('-').pop()}` 
+                        ? `Tiếp tục: Tập ${movie.lastEpisodeSlug?.split('-').pop()} (${percent}%)` 
                         : 'Xem ngay'}
                     </p>
                   </div>

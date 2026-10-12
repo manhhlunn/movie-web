@@ -15,7 +15,8 @@ export async function phimapiFetch<T = unknown>(
   try {
     const res = await fetch(url, {
       next: { revalidate },
-      headers: { 'Content-Type': 'application/json' },
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
@@ -23,7 +24,7 @@ export async function phimapiFetch<T = unknown>(
       return null;
     }
 
-    return res.json() as Promise<T>;
+    return (await res.json()) as T;
   } catch (e) {
     console.warn(`[PhimAPI Exception] — ${url}`, e);
     return null;

@@ -20,13 +20,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function CategoryPage({ params }: Props) {
+export default async function CategoryPage({ params }: Props) {
+  const { slug } = await params;
+  const title = `Phim Thể Loại ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
-      {params.then(({ slug }) => {
-        const title = `Phim Thể Loại ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
-        return <SharedExplorePage filterType="the-loai" slug={slug} title={title} />;
-      })}
+      <SharedExplorePage filterType="the-loai" slug={slug} title={title} />
     </Suspense>
   );
 }

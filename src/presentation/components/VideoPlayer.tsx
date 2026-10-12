@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
 import Hls from 'hls.js';
 import {
   Play,
@@ -22,9 +21,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
+import { syncWatchHistory, fetchOnlineWatchHistory, getUserId, fetchUserHistory } from '@/lib/syncHistory';
 import { useRouter } from 'next/navigation';
-
-const ReactPlayer = dynamic(() => import('react-player'), { ssr: false });
 
 interface VideoPlayerProps {
   linkM3u8?: string;
@@ -33,13 +31,34 @@ interface VideoPlayerProps {
   poster?: string;
   movieSlug?: string;
   episodeSlug?: string;
+  serverIndex?: number;
+  episodeIndex?: number;
+  source?: string;
   movie?: any;
   nextEpisodeUrl?: string;
   onNextEpisode?: () => void;
 }
 
-export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieSlug, episodeSlug, movie, nextEpisodeUrl, onNextEpisode }: VideoPlayerProps) {
+export default function VideoPlayer({
+  linkM3u8,
+  linkEmbed,
+  title,
+  poster,
+  movieSlug,
+  episodeSlug,
+  serverIndex = 0,
+  episodeIndex = 0,
+  source,
+  movie,
+  nextEpisodeUrl,
+  onNextEpisode,
+}: VideoPlayerProps) {
   const [useIframeFallback, setUseIframeFallback] = useState(false);
+
+  useEffect(() => {
+    setUseIframeFallback(false);
+  }, [linkM3u8]);
+
   const isM3u8Valid = !useIframeFallback && !!(linkM3u8 && linkM3u8.toLowerCase().includes('.m3u8'));
 
   if (isM3u8Valid && linkM3u8) {
@@ -49,7 +68,10 @@ export default function VideoPlayer({ linkM3u8, linkEmbed, title, poster, movieS
         title={title} 
         poster={poster} 
         movieSlug={movieSlug} 
-        episodeSlug={episodeSlug} 
+        episodeSlug={episodeSlug}
+        serverIndex={serverIndex}
+        episodeIndex={episodeIndex}
+        source={source}
         movie={movie} 
         nextEpisodeUrl={nextEpisodeUrl} 
         onNextEpisode={onNextEpisode} 
@@ -78,6 +100,9 @@ function HLSPlayer({
   poster, 
   movieSlug, 
   episodeSlug,
+  serverIndex = 0,
+  episodeIndex = 0,
+  source,
   movie,
   nextEpisodeUrl,
   onNextEpisode,
@@ -89,6 +114,9 @@ function HLSPlayer({
   poster?: string;
   movieSlug?: string;
   episodeSlug?: string;
+  serverIndex?: number;
+  episodeIndex?: number;
+  source?: string;
   movie?: any;
   nextEpisodeUrl?: string;
   onNextEpisode?: () => void;
@@ -100,6 +128,7 @@ function HLSPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -113,6 +142,9 @@ function HLSPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [isRotated, setIsRotated] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingSeekTimeRef = useRef<number | null>(null);
+  const handleNextEpisodeRef = useRef<(() => void) | null>(null);
   
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
@@ -151,6 +183,20 @@ function HLSPlayer({
         setPlayerSettings(JSON.parse(savedPlayer));
       } catch(e) {}
     }
+
+    const savedVolume = localStorage.getItem('player-volume');
+    const savedMuted = localStorage.getItem('player-muted');
+    if (savedVolume !== null) {
+      const v = parseFloat(savedVolume);
+      if (!isNaN(v)) {
+        setVolume(v);
+        if (videoRef.current) videoRef.current.volume = v;
+      }
+    }
+    if (savedMuted === 'true') {
+      setIsMuted(true);
+      if (videoRef.current) videoRef.current.muted = true;
+    }
   }, [movieSlug]);
 
   const saveSettings = (newMovieSettings: { introDuration: number, outroDuration: number }, newPlayerSettings: { skipDuration: number }) => {
@@ -178,47 +224,50 @@ function HLSPlayer({
     }
   }, []);
 
-  // Resume progress logic
+  // Save progress logic (Mỗi 5s, khi pause và khi rời trang)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !movieSlug || !episodeSlug) return;
 
-    const savedData = localStorage.getItem(`watch-progress-${movieSlug}`);
-    if (savedData) {
-      try {
-        const progress = JSON.parse(savedData);
-        if (progress.episodeSlug === episodeSlug && progress.time > 5) {
-          video.currentTime = progress.time;
-        }
-      } catch (e) {
-        console.error('Error parsing watch progress', e);
+    const saveCurrentProgress = (force = false) => {
+      if (!video || video.currentTime <= 5) return;
+      const progress = {
+        episodeSlug,
+        time: video.currentTime,
+        duration: video.duration || 0,
+        updatedAt: Date.now(),
+      };
+
+      const currentUserId = getUserId();
+      // Nếu chưa nhập ID: lưu vào localStorage
+      if (!currentUserId) {
+        localStorage.setItem(`watch-progress-${movieSlug}`, JSON.stringify(progress));
       }
-    }
-  }, [movieSlug, episodeSlug]);
-
-  // Save progress logic
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !movieSlug || !episodeSlug) return;
+      
+      // Đồng bộ Supabase (nếu có ID: chỉ lưu Supabase, không lưu local)
+      if (movie) {
+        addToHistory(movie, episodeSlug, video.currentTime, video.duration, serverIndex, episodeIndex, force);
+      }
+    };
 
     const interval = setInterval(() => {
       if (!video.paused && video.currentTime > 5) {
-        const progress = {
-          episodeSlug,
-          time: video.currentTime,
-          updatedAt: Date.now(),
-        };
-        localStorage.setItem(`watch-progress-${movieSlug}`, JSON.stringify(progress));
-        
-        // Update global history for Home page
-        if (movie) {
-          addToHistory(movie, episodeSlug, video.currentTime);
-        }
+        saveCurrentProgress(false);
       }
     }, 5000);
 
-    return () => clearInterval(interval);
-  }, [movieSlug, episodeSlug, movie]);
+    const handlePause = () => {
+      saveCurrentProgress(true);
+    };
+
+    video.addEventListener('pause', handlePause);
+
+    return () => {
+      clearInterval(interval);
+      video.removeEventListener('pause', handlePause);
+      saveCurrentProgress(true);
+    };
+  }, [movieSlug, episodeSlug, movie, serverIndex, episodeIndex, source]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -229,28 +278,113 @@ function HLSPlayer({
     setErrorMessage(null);
     setSlowNetworkWarning(false);
 
+    // Quản lý thời điểm tua tiếp tục xem phim (Resume)
+    let hasResumed = false;
+    let targetResume = 0;
+
+    const doSeek = (targetTime: number) => {
+      if (hasResumed || targetTime <= 5) return;
+      const v = videoRef.current;
+      if (!v) return;
+
+      if (v.readyState >= 1) {
+        try {
+          if (!v.duration || targetTime < v.duration * 0.95) {
+            v.currentTime = targetTime;
+            hasResumed = true;
+          }
+        } catch (e) {
+          console.warn('[VideoPlayer] Lỗi seek vị trí xem tiếp:', e);
+        }
+      }
+    };
+
+    // Lấy tiến độ đã lưu cho tập phim này
+    if (movieSlug && episodeSlug) {
+      const activeUserId = getUserId();
+      if (activeUserId) {
+        // NẾU ĐÃ NHẬP ID: Lấy tiến độ trực tiếp từ Supabase API
+        fetchUserHistory(activeUserId, movieSlug).then((item: any) => {
+          if (item && item.episode_slug === episodeSlug) {
+            const raw = Number(item.position) || 0;
+            const sec = raw >= 1000 ? raw / 1000 : raw;
+            if (sec > 5) {
+              targetResume = sec;
+              doSeek(targetResume);
+            }
+          }
+        });
+      } else {
+        // CHƯA NHẬP ID: Lấy tiến độ từ localStorage
+        try {
+          const savedData = localStorage.getItem(`watch-progress-${movieSlug}`);
+          if (savedData) {
+            const progress = JSON.parse(savedData);
+            if (
+              progress.episodeSlug === episodeSlug &&
+              progress.time > 5 &&
+              (!progress.duration || progress.time < progress.duration * 0.95)
+            ) {
+              targetResume = progress.time;
+              doSeek(targetResume);
+            }
+          }
+        } catch (e) {}
+
+        // Fallback kiểm tra online theo deviceId nếu local chưa có
+        if (targetResume === 0) {
+          fetchOnlineWatchHistory(movieSlug).then((item: any) => {
+            if (item && item.episode_slug === episodeSlug) {
+              const raw = Number(item.position) || 0;
+              const sec = raw >= 1000 ? raw / 1000 : raw;
+              if (sec > 5) {
+                targetResume = sec;
+                doSeek(targetResume);
+              }
+            }
+          });
+        }
+      }
+    }
+
+    const onMetadataLoaded = () => {
+      if (targetResume > 5) {
+        doSeek(targetResume);
+      }
+    };
+    video.addEventListener('loadedmetadata', onMetadataLoaded);
+    video.addEventListener('canplay', onMetadataLoaded);
+
     // Network delay warning timer (8 seconds)
     const slowTimer = setTimeout(() => {
       setSlowNetworkWarning(true);
     }, 8000);
 
     let hls: Hls | null = null;
+    let onNativeLoaded: (() => void) | null = null;
+    let onNativeError: (() => void) | null = null;
 
     if (Hls.isSupported()) {
       hls = new Hls({
         maxLoadingDelay: 4,
-        maxBufferLength: 15,
-        maxMaxBufferLength: 30,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        backBufferLength: 60,
         enableWorker: true,
         startLevel: -1,
         capLevelToPlayerSize: true,
-        abrEwmaDefaultEstimate: 500000,
+        startFragPrefetch: true,
+        lowLatencyMode: false,
+        maxBufferHole: 0.5,
       });
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsLoading(false);
         setSlowNetworkWarning(false);
+        if (targetResume > 5) {
+          doSeek(targetResume);
+        }
         video.play().then(() => setIsPlaying(true)).catch(() => {});
       });
 
@@ -288,51 +422,87 @@ function HLSPlayer({
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS
       video.src = url;
-      const onLoaded = () => {
+      onNativeLoaded = () => {
         setIsLoading(false);
         setSlowNetworkWarning(false);
+        if (targetResume > 5) {
+          doSeek(targetResume);
+        }
         video.play().then(() => setIsPlaying(true)).catch(() => {});
       };
-      const onErrorNative = () => {
+      onNativeError = () => {
         console.warn('[VideoPlayer] Native Safari HLS error:', video.error);
         setIsLoading(false);
         setHasError(true);
         setErrorMessage('Thiết bị iOS/Safari không thể phát nguồn video này (CORS hoặc định dạng Audio/Video không hỗ trợ). Vui lòng chọn nguồn khác.');
       };
-      video.addEventListener('loadedmetadata', onLoaded);
-      video.addEventListener('error', onErrorNative);
+      video.addEventListener('loadedmetadata', onNativeLoaded);
+      video.addEventListener('error', onNativeError);
     }
 
     return () => {
       clearTimeout(slowTimer);
       hls?.destroy();
+      if (video) {
+        video.removeEventListener('loadedmetadata', onMetadataLoaded);
+        video.removeEventListener('canplay', onMetadataLoaded);
+        if (onNativeLoaded) video.removeEventListener('loadedmetadata', onNativeLoaded);
+        if (onNativeError) video.removeEventListener('error', onNativeError);
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      }
     };
-  }, [url, retryCount]);
+  }, [url, episodeSlug, retryCount]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     const onTimeUpdate = () => {
-      setCurrentTime(video.currentTime);
-      if (!isDraggingRef.current) {
-        setProgress(video.duration ? (video.currentTime / video.duration) * 100 : 0);
+      if (pendingSeekTimeRef.current === null) {
+        setCurrentTime(video.currentTime);
+        if (!isDraggingRef.current) {
+          setProgress(video.duration ? (video.currentTime / video.duration) * 100 : 0);
+        }
       }
     };
     const onDurationChange = () => setDuration(video.duration || 0);
-    const onWaiting = () => setIsLoading(true);
-    const onCanPlay = () => setIsLoading(false);
+
+    let waitTimer: NodeJS.Timeout | null = null;
+    const onWaiting = () => {
+      if (waitTimer) clearTimeout(waitTimer);
+      waitTimer = setTimeout(() => {
+        setIsLoading(true);
+      }, 250);
+    };
+    const onCanPlay = () => {
+      if (waitTimer) clearTimeout(waitTimer);
+      setIsLoading(false);
+    };
+
+    const onEnded = () => {
+      setIsPlaying(false);
+      handleNextEpisodeRef.current?.();
+    };
 
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('durationchange', onDurationChange);
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('playing', onCanPlay);
+    video.addEventListener('seeked', onCanPlay);
+    video.addEventListener('ended', onEnded);
 
     return () => {
+      if (waitTimer) clearTimeout(waitTimer);
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('durationchange', onDurationChange);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('playing', onCanPlay);
+      video.removeEventListener('seeked', onCanPlay);
+      video.removeEventListener('ended', onEnded);
     };
   }, []);
 
@@ -393,13 +563,11 @@ function HLSPlayer({
       switch (e.key) {
         case 'ArrowRight':
           e.preventDefault();
-          video.currentTime = Math.min(video.currentTime + playerSettings.skipDuration, video.duration);
-          showControlsTemporarily();
+          skipForward();
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          video.currentTime = Math.max(video.currentTime - playerSettings.skipDuration, 0);
-          showControlsTemporarily();
+          skipBackward();
           break;
         case ' ':
           e.preventDefault();
@@ -421,7 +589,7 @@ function HLSPlayer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, isFullscreen, isMuted, duration]); // Re-bind when state used in functions changes
+  }, [isPlaying, isFullscreen, isMuted, duration, playerSettings.skipDuration]); // Re-bind when state used in functions changes
 
   // Handle auto-rotate on fullscreen
   useEffect(() => {
@@ -447,26 +615,75 @@ function HLSPlayer({
   const toggleMute = () => {
     const video = videoRef.current;
     if (!video) return;
-    video.muted = !video.muted;
-    setIsMuted(video.muted);
+    const nextMuted = !video.muted;
+    video.muted = nextMuted;
+    setIsMuted(nextMuted);
+    localStorage.setItem('player-muted', String(nextMuted));
+  };
+
+  const handleVolumeChange = (newVol: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = newVol;
+    setVolume(newVol);
+    if (newVol === 0) {
+      video.muted = true;
+      setIsMuted(true);
+      localStorage.setItem('player-muted', 'true');
+    } else if (isMuted) {
+      video.muted = false;
+      setIsMuted(false);
+      localStorage.setItem('player-muted', 'false');
+    }
+    localStorage.setItem('player-volume', String(newVol));
   };
 
   const toggleRotation = () => {
     setIsRotated(!isRotated);
   };
 
-  const skipBackward = () => {
+  const applySeek = (newTime: number) => {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(video.currentTime - playerSettings.skipDuration, 0);
+
+    // Cập nhật ngay UI để người dùng thấy thanh tua chạy mượt không bị khựng
+    setCurrentTime(newTime);
+    setProgress(duration ? (newTime / duration) * 100 : 0);
     showControlsTemporarily();
+
+    pendingSeekTimeRef.current = newTime;
+    if (seekTimeoutRef.current) {
+      clearTimeout(seekTimeoutRef.current);
+    }
+
+    // Debounce 180ms: gom các lần tua liên tiếp (ví dụ ấn mũi tên 3-4 lần liên tục) lại thành 1 lần seek duy nhất
+    seekTimeoutRef.current = setTimeout(() => {
+      const target = pendingSeekTimeRef.current;
+      pendingSeekTimeRef.current = null;
+      if (video && target !== null) {
+        if (typeof (video as any).fastSeek === 'function') {
+          (video as any).fastSeek(target);
+        } else {
+          video.currentTime = target;
+        }
+      }
+    }, 180);
+  };
+
+  const skipBackward = () => {
+    const video = videoRef.current;
+    if (!video || !duration) return;
+    const base = pendingSeekTimeRef.current !== null ? pendingSeekTimeRef.current : video.currentTime;
+    const target = Math.max(base - playerSettings.skipDuration, 0);
+    applySeek(target);
   };
 
   const skipForward = () => {
     const video = videoRef.current;
     if (!video || !duration) return;
-    video.currentTime = Math.min(video.currentTime + playerSettings.skipDuration, duration);
-    showControlsTemporarily();
+    const base = pendingSeekTimeRef.current !== null ? pendingSeekTimeRef.current : video.currentTime;
+    const target = Math.min(base + playerSettings.skipDuration, duration);
+    applySeek(target);
   };
 
   const changeSpeed = (speed: number) => {
@@ -584,13 +801,23 @@ function HLSPlayer({
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
-      e.currentTarget.releasePointerCapture(e.pointerId);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (err) {}
       const pos = calculateProgress(e.clientX, e.clientY);
       if (videoRef.current && duration) {
         videoRef.current.currentTime = pos * duration;
       }
       setHoverPos(null);
     }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    isDraggingRef.current = false;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (err) {}
+    setHoverPos(null);
   };
 
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -692,6 +919,10 @@ function HLSPlayer({
     }
   };
 
+  useEffect(() => {
+    handleNextEpisodeRef.current = handleNextEpisode;
+  });
+
   return (
     <div
       ref={containerRef}
@@ -762,14 +993,23 @@ function HLSPlayer({
           onClick={handleVideoClick}
         playsInline
         poster={poster}
-        onLoadedData={(e) => { e.currentTarget.playbackRate = playbackRate; }}
+        onLoadedData={(e) => { 
+          e.currentTarget.playbackRate = playbackRate; 
+          e.currentTarget.volume = volume;
+          e.currentTarget.muted = isMuted;
+        }}
       />
 
       {/* Loading spinner with Network Warning */}
       {isLoading && !hasError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm z-30 p-4 text-center">
+        <div className={cn(
+          "absolute inset-0 flex flex-col items-center justify-center z-30 p-4 text-center pointer-events-none transition-all duration-200",
+          currentTime > 0 ? "bg-black/20" : "bg-black/60 backdrop-blur-sm"
+        )}>
           <Loader2 className="w-10 h-10 text-red-600 animate-spin mb-3" />
-          <p className="text-white text-xs sm:text-sm font-medium">Đang kết nối luồng video...</p>
+          {currentTime === 0 && (
+            <p className="text-white text-xs sm:text-sm font-medium">Đang kết nối luồng video...</p>
+          )}
           {slowNetworkWarning && (
             <div className="mt-3 bg-zinc-900/95 border border-yellow-500/30 rounded-lg px-3 py-2 text-xs text-yellow-400 max-w-sm animate-pulse shadow-lg">
               ⚠️ Mạng đang chậm hoặc server phản hồi lâu. Bạn có thể thử chọn nguồn phát khác phía trên.
@@ -942,21 +1182,20 @@ function HLSPlayer({
       >
         {/* Progress bar */}
         <div className="relative w-full">
-          {/* Preview Box */}
-          <div 
-            className={cn(
-              "absolute bottom-full mb-4 transform -translate-x-1/2 flex flex-col items-center pointer-events-none transition-opacity duration-200",
-              hoverPos !== null && duration > 0 ? "opacity-100" : "opacity-0"
-            )}
-            style={{ left: `${(hoverPos || 0) * 100}%` }}
-          >
-            <div className="w-48 sm:w-64 md:w-80 aspect-video bg-black rounded-lg border-2 border-zinc-500 overflow-hidden shadow-2xl relative mb-1">
-              <VideoPreview url={url} time={hoverTime} />
+          {/* Preview Box - Only render when actively hovered */}
+          {hoverPos !== null && duration > 0 && (
+            <div 
+              className="hidden md:flex absolute bottom-full mb-4 transform -translate-x-1/2 flex-col items-center pointer-events-none transition-opacity duration-200 opacity-100"
+              style={{ left: `${(hoverPos || 0) * 100}%` }}
+            >
+              <div className="w-48 sm:w-64 md:w-80 aspect-video bg-black rounded-lg border-2 border-zinc-500 overflow-hidden shadow-2xl relative mb-1">
+                <VideoPreview url={url} time={hoverTime} />
+              </div>
+              <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-mono shadow">
+                {formatTime(hoverTime)}
+              </div>
             </div>
-            <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-mono shadow">
-              {formatTime(hoverTime)}
-            </div>
-          </div>
+          )}
 
           <div
             ref={progressBarRef}
@@ -965,6 +1204,7 @@ function HLSPlayer({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerLeave}
+            onPointerCancel={handlePointerCancel}
           >
             <div
               className="h-full bg-red-600 rounded-full relative transition-all"
@@ -984,12 +1224,26 @@ function HLSPlayer({
             >
               {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
             </button>
-            <button
-              onClick={toggleMute}
-              className="text-white hover:text-red-500 transition-colors"
-            >
-              {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-            </button>
+            <div className="flex items-center group/volume relative">
+              <button
+                onClick={toggleMute}
+                className="text-white hover:text-red-500 transition-colors"
+                title={isMuted || volume === 0 ? "Bật âm thanh" : "Tắt âm thanh"}
+              >
+                {isMuted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              </button>
+              <div className="w-0 overflow-hidden group-hover/volume:w-16 sm:group-hover/volume:w-20 transition-all duration-200 flex items-center ml-1">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  className="w-14 sm:w-16 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-red-600"
+                />
+              </div>
+            </div>
             <span className="text-xs text-zinc-300 font-mono">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
@@ -1040,22 +1294,19 @@ function HLSPlayer({
 
 function VideoPreview({ url, time }: { url: string; time: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isDesktop, setIsDesktop] = useState(false);
-
-  useEffect(() => {
-    setIsDesktop(window.matchMedia('(min-width: 1024px)').matches);
-  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !isDesktop) return;
+    if (!video) return;
 
     let hls: Hls | null = null;
     if (Hls.isSupported()) {
       hls = new Hls({
-        maxBufferLength: 2,
-        maxMaxBufferLength: 4,
+        maxBufferLength: 1,
+        maxMaxBufferLength: 2,
         enableWorker: true,
+        startLevel: 0,
+        capLevelToPlayerSize: true,
       });
       hls.loadSource(url);
       hls.attachMedia(video);
@@ -1065,17 +1316,22 @@ function VideoPreview({ url, time }: { url: string; time: number }) {
 
     return () => {
       hls?.destroy();
+      if (video) {
+        video.removeAttribute('src');
+        video.load();
+      }
     };
-  }, [url, isDesktop]);
+  }, [url]);
 
   useEffect(() => {
-    if (!isDesktop) return;
-    if (videoRef.current && Math.abs(videoRef.current.currentTime - time) > 1) {
-      videoRef.current.currentTime = time;
-    }
-  }, [time, isDesktop]);
+    const timer = setTimeout(() => {
+      if (videoRef.current && Math.abs(videoRef.current.currentTime - time) > 1) {
+        videoRef.current.currentTime = time;
+      }
+    }, 150);
 
-  if (!isDesktop) return <div className="w-full h-full bg-zinc-900" />;
+    return () => clearTimeout(timer);
+  }, [time]);
 
   return <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />;
 }
@@ -1083,9 +1339,21 @@ function VideoPreview({ url, time }: { url: string; time: number }) {
 // ─── Iframe Player ───────────────────────────────────────────
 
 function IframePlayer({ url, title }: { url: string; title?: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const el = iframeRef.current;
+    return () => {
+      if (el) {
+        el.src = '';
+      }
+    };
+  }, []);
+
   return (
     <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden group">
       <iframe
+        ref={iframeRef}
         src={url}
         title={title || 'Video player'}
         className="w-full h-full border-0"
