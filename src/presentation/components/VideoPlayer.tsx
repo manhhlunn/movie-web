@@ -217,16 +217,16 @@ function HLSPlayer({
 
   const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
-  // Track window dimensions for perfect rotated fit
+  // Track window dimensions for perfect rotated fit (only when isRotated is active)
   const [windowDims, setWindowDims] = useState({ width: 0, height: 0 });
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && isRotated) {
       const updateDims = () => setWindowDims({ width: window.innerWidth, height: window.innerHeight });
       updateDims();
-      window.addEventListener('resize', updateDims);
+      window.addEventListener('resize', updateDims, { passive: true });
       return () => window.removeEventListener('resize', updateDims);
     }
-  }, []);
+  }, [isRotated]);
 
   // Save progress logic (Mỗi 5s, khi pause và khi rời trang)
   useEffect(() => {
@@ -318,7 +318,7 @@ function HLSPlayer({
       }
     };
 
-    // Kiểm tra nhanh localStorage trước (đồng bộ)
+    // Kiểm tra nhanh localStorage trước (khi chưa nhập ID)
     try {
       const savedData = localStorage.getItem(`watch-progress-${movieSlug}`);
       if (savedData) {
@@ -329,6 +329,21 @@ function HLSPlayer({
           (!progress.duration || progress.time < progress.duration * 0.95)
         ) {
           targetResumeRef.current = progress.time;
+        }
+      } else {
+        const historyStr = localStorage.getItem('user_history');
+        if (historyStr) {
+          const historyList = JSON.parse(historyStr);
+          const found = Array.isArray(historyList) ? historyList.find((m: any) => m.slug === movieSlug) : null;
+          if (found && found.lastTime > 3) {
+            const isMatch =
+              isSingle ||
+              (found.serverIndex === serverIndex && found.episodeIndex === episodeIndex) ||
+              (found.lastEpisodeSlug && isEpisodeMatch(found.lastEpisodeSlug, episodeSlug, isSingle));
+            if (isMatch && (!found.lastDuration || found.lastTime < found.lastDuration * 0.95)) {
+              targetResumeRef.current = found.lastTime;
+            }
+          }
         }
       }
     } catch (e) {}
@@ -364,37 +379,11 @@ function HLSPlayer({
             isHistoryFetchingRef.current = false;
           });
       } else {
+        // CHƯA NHẬP ID: Chỉ dùng localStorage, không gọi API Supabase
+        isHistoryFetchingRef.current = false;
+        clearTimeout(historyFetchTimeout);
         if (targetResumeRef.current > 3) {
-          isHistoryFetchingRef.current = false;
-          clearTimeout(historyFetchTimeout);
           doSeek(targetResumeRef.current);
-        } else {
-          // Fallback kiểm tra online theo deviceId nếu local chưa có
-          fetchOnlineWatchHistory(movieSlug)
-            .then((item: any) => {
-              isHistoryFetchingRef.current = false;
-              clearTimeout(historyFetchTimeout);
-              if (item) {
-                const savedServerIdx = item.serverIndex ?? item.server_index ?? 0;
-                const savedEpIdx = item.episodeIndex ?? item.episode_index ?? 0;
-                const isMatch =
-                  isSingle ||
-                  (savedServerIdx === serverIndex && savedEpIdx === episodeIndex) ||
-                  (item.episodeSlug && isEpisodeMatch(item.episodeSlug, episodeSlug, isSingle));
-
-                if (isMatch) {
-                  const raw = Number(item.position) || 0;
-                  const sec = raw >= 1000 ? raw / 1000 : raw;
-                  if (sec > 3) {
-                    targetResumeRef.current = sec;
-                    doSeek(sec);
-                  }
-                }
-              }
-            })
-            .catch(() => {
-              isHistoryFetchingRef.current = false;
-            });
         }
       }
     } else {

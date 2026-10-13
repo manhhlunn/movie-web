@@ -66,17 +66,35 @@ export function getUserId(): string | null {
 export function setUserId(userId: string | null) {
   if (typeof window === 'undefined') return;
   lastSyncedMap.clear();
+  userHistoryCache.clear();
+  inFlightFetches.clear();
   if (userId && userId.trim()) {
     localStorage.setItem(USER_ID_KEY, userId.trim());
   } else {
     localStorage.removeItem(USER_ID_KEY);
   }
   window.dispatchEvent(new CustomEvent('movie-user-changed', { detail: userId?.trim() || null }));
-  window.dispatchEvent(new CustomEvent('movie-history-changed'));
 }
 
 // Memory cache of last synced position per movie to prevent redundant network calls
 const lastSyncedMap = new Map<string, { position: number; timestamp: number }>();
+
+// Short-term cache & in-flight deduplication for fetchUserHistory (3s TTL)
+const FETCH_CACHE_TTL_MS = 3000;
+const userHistoryCache = new Map<string, { data: any; timestamp: number }>();
+const inFlightFetches = new Map<string, Promise<any>>();
+
+function invalidateUserHistoryCache(userId?: string) {
+  if (!userId) {
+    userHistoryCache.clear();
+    return;
+  }
+  for (const key of userHistoryCache.keys()) {
+    if (key.startsWith(`${userId}:`)) {
+      userHistoryCache.delete(key);
+    }
+  }
+}
 
 /**
  * Sync watch history to online API (Throttled: at most once every 10 seconds per movie unless forced)
@@ -84,10 +102,11 @@ const lastSyncedMap = new Map<string, { position: number; timestamp: number }>()
 export async function syncWatchHistory(params: SyncHistoryParams, force = false): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
-  const deviceId = getDeviceId();
   const userId = getUserId() || undefined;
+  // Chỉ đồng bộ lên Supabase khi người dùng đã nhập userId
+  if (!userId) return false;
 
-  if (!deviceId && !userId) return false;
+  const deviceId = getDeviceId();
 
   const now = Date.now();
   const lastSync = lastSyncedMap.get(params.slug);
@@ -130,6 +149,9 @@ export async function syncWatchHistory(params: SyncHistoryParams, force = false)
       keepalive: true,
     });
 
+    if (res.ok) {
+      invalidateUserHistoryCache(userId);
+    }
     return res.ok;
   } catch (err) {
     // Non-blocking error handling
@@ -139,21 +161,17 @@ export async function syncWatchHistory(params: SyncHistoryParams, force = false)
 }
 
 /**
- * Fetch online watch history for a specific movie or all movies
+ * Fetch online watch history for a specific movie or all movies (chỉ khi có userId)
  */
 export async function fetchOnlineWatchHistory(slug?: string, limit = 50): Promise<WatchHistoryItem[] | WatchHistoryItem | null> {
   if (typeof window === 'undefined') return null;
 
-  const deviceId = getDeviceId();
   const userId = getUserId();
-  const syncId = userId || deviceId;
-
-  if (!syncId) return null;
+  if (!userId) return null;
 
   try {
     const params = new URLSearchParams();
-    if (userId) params.set('userId', userId);
-    if (deviceId) params.set('deviceId', deviceId);
+    params.set('userId', userId);
     if (slug) params.set('slug', slug);
     if (limit) params.set('limit', String(limit));
 
@@ -173,19 +191,42 @@ export async function fetchOnlineWatchHistory(slug?: string, limit = 50): Promis
 
 /**
  * Fetch online watch history directly by User ID from /api/history/user/[id]
+ * Includes in-flight request deduplication and 3s TTL cache.
  */
 export async function fetchUserHistory(userId: string, slug?: string): Promise<WatchHistoryItem[] | WatchHistoryItem | null> {
   if (!userId) return null;
-  try {
-    const url = `/api/history/user/${encodeURIComponent(userId)}${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return slug ? data.item || null : data.items || [];
-  } catch (err) {
-    console.warn('[SyncHistory] Error fetching history by user ID:', err);
-    return null;
+  const cacheKey = `${userId}:${slug || '__all__'}`;
+  const now = Date.now();
+
+  const cached = userHistoryCache.get(cacheKey);
+  if (cached && now - cached.timestamp < FETCH_CACHE_TTL_MS) {
+    return cached.data;
   }
+
+  const existingPromise = inFlightFetches.get(cacheKey);
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const url = `/api/history/user/${encodeURIComponent(userId)}${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const result = slug ? data.item || null : data.items || [];
+      userHistoryCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      return result;
+    } catch (err) {
+      console.warn('[SyncHistory] Error fetching history by user ID:', err);
+      return null;
+    } finally {
+      inFlightFetches.delete(cacheKey);
+    }
+  })();
+
+  inFlightFetches.set(cacheKey, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -202,6 +243,9 @@ export async function insertUserHistory(userId: string, params: SyncHistoryParam
       body: JSON.stringify(params),
       keepalive: true,
     });
+    if (res.ok) {
+      invalidateUserHistoryCache(userId);
+    }
     return res.ok;
   } catch (err) {
     console.warn('[SyncHistory] Error inserting history by user ID:', err);
@@ -210,26 +254,26 @@ export async function insertUserHistory(userId: string, params: SyncHistoryParam
 }
 
 /**
- * Delete watch history online (for user or device)
+ * Delete watch history online (chỉ khi có userId)
  */
 export async function deleteOnlineWatchHistory(slug?: string): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
-  const deviceId = getDeviceId();
   const userId = getUserId();
-
-  if (!deviceId && !userId) return false;
+  if (!userId) return false;
 
   try {
     const params = new URLSearchParams();
-    if (userId) params.set('userId', userId);
-    if (deviceId) params.set('deviceId', deviceId);
+    params.set('userId', userId);
     if (slug) params.set('slug', slug);
 
     const res = await fetch(`/api/history?${params.toString()}`, {
       method: 'DELETE',
     });
 
+    if (res.ok) {
+      invalidateUserHistoryCache(userId);
+    }
     return res.ok;
   } catch (err) {
     console.warn('[SyncHistory] Error deleting online watch history:', err);
@@ -245,6 +289,9 @@ export async function deleteUserHistory(userId: string, slug?: string): Promise<
   try {
     const url = `/api/history/user/${encodeURIComponent(userId)}${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`;
     const res = await fetch(url, { method: 'DELETE' });
+    if (res.ok) {
+      invalidateUserHistoryCache(userId);
+    }
     return res.ok;
   } catch (err) {
     console.warn('[SyncHistory] Error deleting user history:', err);

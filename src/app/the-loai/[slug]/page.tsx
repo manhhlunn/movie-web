@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import SharedExplorePage from '@/presentation/components/SharedExplorePage';
 import { Suspense } from 'react';
+import { getExploreMovies } from '@/application/useCases/MovieUseCases';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -23,9 +24,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function CategoryPage({ params }: Props) {
   const { slug } = await params;
   const title = `Phim Thể Loại ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
+  const initialData = await getExploreMovies('the-loai', slug, 1).catch(() => undefined);
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
-      <SharedExplorePage filterType="the-loai" slug={slug} title={title} />
+      <SharedExplorePage filterType="the-loai" slug={slug} title={title} initialData={initialData} />
     </Suspense>
   );
 }

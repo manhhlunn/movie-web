@@ -152,6 +152,17 @@ Dùng để hiển thị các hàng phim ở trang chủ và phân trang ở tra
   - `https://phimapi.com/v1/api/danh-sach/hoat-hinh?page=1`
   - `https://phimapi.com/v1/api/danh-sach/tv-shows?page=1`
   - `https://phimapi.com/v1/api/danh-sach/phim-chieu-rap?page=1`
+
+* **Các Query Parameters hỗ trợ kết hợp lọc (Filters)**:
+  Tất cả các endpoint `/v1/api/danh-sach/{slug}` (bao gồm `phim-chieu-rap`) đều hỗ trợ truyền kèm các tham số lọc:
+  - `page`: Số trang (mặc định: `1`).
+  - `category`: Slug thể loại (ví dụ: `hanh-dong`, `kinh-di`, `tinh-cam`).
+  - `country`: Slug quốc gia (ví dụ: `au-my`, `han-quoc`, `viet-nam`).
+  - `year`: Năm phát hành (ví dụ: `2024`, `2025`).
+  - `sort_field`: Trường sắp xếp (`modified.time`, `_id`, `year`).
+  - `sort_type`: Thứ tự sắp xếp (`desc` hoặc `asc`).
+  - *Ví dụ lọc kết hợp*: `https://phimapi.com/v1/api/danh-sach/phim-chieu-rap?page=1&category=hanh-dong&country=han-quoc&year=2024`
+
 * **Cấu trúc JSON gốc trả về**:
 ```json
 {

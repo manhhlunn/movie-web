@@ -3,14 +3,14 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Play, Calendar, Clock, Star, Film, Users, Heart } from 'lucide-react';
-import { useMovieDetails, useMoviePeoples, useMovieExtraSources } from '@/presentation/hooks/useMovies';
+import { useMovieDetails, useMoviePeoples } from '@/presentation/hooks/useMovies';
 import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { cn } from '@/lib/utils';
-import { useState, useEffect, useMemo } from 'react';
-import { toggleFavorite, isFavorite, addToHistory } from '@/lib/userStore';
-import { getUserId, fetchUserHistory, fetchOnlineWatchHistory } from '@/lib/syncHistory';
+import { useState, useEffect } from 'react';
+import { toggleFavorite, isFavorite } from '@/lib/userStore';
+import { getUserId, fetchUserHistory } from '@/lib/syncHistory';
 import { getEpisodeSlugFromDetail } from '@/lib/episodeUtils';
 
 import { useSearchParams } from 'next/navigation';
@@ -34,28 +34,11 @@ export default function MovieDetailClient({
   const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || propSource || initialMovie?.source || 'phimapi';
 
   const { data: movie, isLoading, isError } = useMovieDetails(slug, sourceParam, { initialData: initialMovie });
-  const { data: extraSources } = useMovieExtraSources(movie, sourceParam);
   const { data: peoples } = useMoviePeoples(slug, movie?.tmdb);
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
 
-  const combinedServers = useMemo(() => {
-    if (!movie) return [];
-    const baseServers = movie.servers ? [...movie.servers] : [];
-    if (!extraSources || extraSources.length === 0) return baseServers;
-
-    const merged = [...baseServers];
-    extraSources.forEach((extra: any) => {
-      if (merged.some(existing => existing.serverName === extra.serverName)) return;
-      merged.push(extra);
-    });
-    return merged;
-  }, [movie, extraSources]);
-
-  const effectiveMovie = useMemo(() => {
-    if (!movie) return undefined;
-    return { ...movie, servers: combinedServers };
-  }, [movie, combinedServers]);
+  const combinedServers = movie?.servers || [];
 
   useEffect(() => {
     const activeUserId = getUserId();
@@ -67,7 +50,7 @@ export default function MovieDetailClient({
           const targetSlug =
             item.episodeSlug ||
             item.episode_slug ||
-            getEpisodeSlugFromDetail(effectiveMovie, sIdx, epIdx);
+            getEpisodeSlugFromDetail(movie, sIdx, epIdx);
           const pos = Number(item.position) || 0;
           const sec = pos >= 1000 ? pos / 1000 : pos;
           if (targetSlug && sec > 3) {
@@ -81,33 +64,11 @@ export default function MovieDetailClient({
         try {
           setWatchProgress(JSON.parse(saved));
         } catch (e) {}
-      } else {
-        fetchOnlineWatchHistory(slug).then((item: any) => {
-          if (item) {
-            const sIdx = item.serverIndex ?? item.server_index ?? 0;
-            const epIdx = item.episodeIndex ?? item.episode_index ?? 0;
-            const targetSlug =
-              item.episodeSlug ||
-              item.episode_slug ||
-              getEpisodeSlugFromDetail(effectiveMovie, sIdx, epIdx);
-            const pos = Number(item.position) || 0;
-            const sec = pos >= 1000 ? pos / 1000 : pos;
-            if (targetSlug && sec > 3) {
-              setWatchProgress({ episodeSlug: targetSlug, time: sec });
-            }
-          }
-        });
       }
     }
     
     setIsBookmarked(isFavorite(slug));
-  }, [slug, effectiveMovie]);
-
-  useEffect(() => {
-    if (movie) {
-      addToHistory(movie);
-    }
-  }, [movie]);
+  }, [slug, movie]);
 
   const handleToggleFavorite = () => {
     if (movie) {
@@ -161,7 +122,7 @@ export default function MovieDetailClient({
           alt={movie.name}
           fill
           sizes="100vw"
-          quality={80}
+          quality={85}
           className="object-cover object-top"
           priority
         />
@@ -182,7 +143,7 @@ export default function MovieDetailClient({
                 width={300}
                 height={450}
                 sizes="(max-width: 768px) 192px, 288px"
-                quality={80}
+                quality={85}
                 className="w-full h-auto object-cover"
                 priority
               />

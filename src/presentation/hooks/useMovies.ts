@@ -15,7 +15,7 @@ import {
   getMovieList,
   getExploreMovies,
 } from '@/application/useCases/MovieUseCases';
-import { Movie, ServerData } from '@/domain/entities/Movie';
+import { Movie, MovieListResult, ServerData } from '@/domain/entities/Movie';
 
 export function useHomeMovies() {
   return useQuery({
@@ -79,13 +79,15 @@ export function useExploreMovies(
   filterType: 'danh-sach' | 'the-loai' | 'quoc-gia' | 'nam-phat-hanh', 
   slug: string, 
   page = 1,
-  filters?: { category?: string; country?: string; year?: string }
+  filters?: { category?: string; country?: string; year?: string },
+  initialData?: MovieListResult
 ) {
   return useQuery({
     queryKey: ['explore-movies', filterType, slug, page, filters?.category, filters?.country, filters?.year],
     queryFn: () => getExploreMovies(filterType, slug, page, filters),
     staleTime: 5 * 60 * 1000,
     enabled: !!slug,
+    initialData,
   });
 }
 

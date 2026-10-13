@@ -41,6 +41,7 @@ export default function Pagination({
     <nav className="flex items-center justify-center gap-1.5 mt-10" aria-label="Phân trang">
       {/* Previous */}
       <Link
+        prefetch={false}
         href={currentPage > 1 ? buildHref(currentPage - 1) : '#'}
         className={cn(
           'p-2.5 rounded-lg transition-colors',
@@ -57,6 +58,7 @@ export default function Pagination({
       {start > 1 && (
         <>
           <Link
+            prefetch={false}
             href={buildHref(1)}
             className="w-10 h-10 flex items-center justify-center rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
@@ -70,6 +72,7 @@ export default function Pagination({
       {pages.map((page) => (
         <Link
           key={page}
+          prefetch={false}
           href={buildHref(page)}
           className={cn(
             'w-10 h-10 flex items-center justify-center rounded-lg text-sm font-medium transition-all',
@@ -87,6 +90,7 @@ export default function Pagination({
         <>
           {end < totalPages - 1 && <span className="text-zinc-600 px-1">...</span>}
           <Link
+            prefetch={false}
             href={buildHref(totalPages)}
             className="w-10 h-10 flex items-center justify-center rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
@@ -97,6 +101,7 @@ export default function Pagination({
 
       {/* Next */}
       <Link
+        prefetch={false}
         href={currentPage < totalPages ? buildHref(currentPage + 1) : '#'}
         className={cn(
           'p-2.5 rounded-lg transition-colors',

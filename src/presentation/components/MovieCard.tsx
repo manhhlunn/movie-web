@@ -41,7 +41,7 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
         className || 'w-full'
       )}
     >
-      <Link href={href} className="block">
+      <Link href={href} prefetch={false} className="block">
         <div className="relative w-full aspect-[2/3] overflow-hidden">
           <Image
             src={imgSrc}

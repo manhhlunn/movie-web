@@ -63,71 +63,9 @@ export default function HistoryPage() {
         }
       }
 
-      // CHƯA NHẬP ID: Lấy lịch sử cục bộ
+      // CHƯA NHẬP ID: Chỉ lấy lịch sử cục bộ từ localStorage
       const local = getHistory();
       setMovies(local);
-
-      // Thử đồng bộ online với deviceId
-      fetchOnlineWatchHistory().then((onlineItems: any) => {
-        if (Array.isArray(onlineItems) && onlineItems.length > 0) {
-          const remoteMovies: Movie[] = onlineItems.map((item) => ({
-            id: String(item.id || item.slug),
-            name: item.movieName || item.movie_name || item.slug,
-            slug: item.slug,
-            originName: '',
-            type: 'single',
-            posterUrl: item.posterUrl || item.poster_url || '',
-            thumbUrl: item.thumbUrl || item.thumb_url || item.posterUrl || item.poster_url || '',
-            year: 0,
-            quality: 'HD',
-            lang: '',
-            episodeCurrent: (item.episodeSlug || item.episode_slug)
-              ? `Tập ${(item.episodeSlug || item.episode_slug).replace('tap-', '')}`
-              : `Tập ${(item.episodeIndex ?? item.episode_index ?? 0) + 1}`,
-            episodeTotal: '',
-            time: '',
-            description: '',
-            categories: [],
-            countries: [],
-            actors: [],
-            directors: [],
-            tmdbVoteAverage: 0,
-            imdbRating: 0,
-            imdbId: '',
-            imdbVoteCount: 0,
-            source: item.source as any,
-            serverIndex: item.serverIndex ?? item.server_index ?? 0,
-            episodeIndex: item.episodeIndex ?? item.episode_index ?? 0,
-            lastEpisodeSlug:
-              item.episodeSlug ||
-              item.episode_slug ||
-              `tap-${(item.episodeIndex ?? item.episode_index ?? 0) + 1}`,
-            lastTime: Number(item.position) || 0,
-            lastDuration: Number(item.duration) || 0,
-          }));
-
-          const mergedMap = new Map<string, Movie>();
-          local.forEach((m) => mergedMap.set(m.slug, m));
-          remoteMovies.forEach((m) => {
-            const existing = mergedMap.get(m.slug);
-            if (existing) {
-              mergedMap.set(m.slug, {
-                ...existing,
-                source: m.source || existing.source,
-                lastEpisodeSlug: m.lastEpisodeSlug || existing.lastEpisodeSlug,
-                lastTime: m.lastTime || existing.lastTime,
-                lastDuration: m.lastDuration || existing.lastDuration,
-              });
-            } else {
-              mergedMap.set(m.slug, m);
-            }
-          });
-
-          const mergedList = Array.from(mergedMap.values());
-          setMovies(mergedList);
-          localStorage.setItem('user_history', JSON.stringify(mergedList));
-        }
-      });
     };
 
     loadHistory();
@@ -146,7 +84,11 @@ export default function HistoryPage() {
         deleteUserHistory(userId);
       } else {
         localStorage.setItem('user_history', JSON.stringify([]));
-        deleteOnlineWatchHistory();
+        Object.keys(localStorage).forEach((key) => {
+          if (key.startsWith('watch-progress-')) {
+            localStorage.removeItem(key);
+          }
+        });
       }
       setMovies([]);
       if (typeof window !== 'undefined') {

@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import SharedExplorePage from '@/presentation/components/SharedExplorePage';
 import { Suspense } from 'react';
+import { getExploreMovies } from '@/application/useCases/MovieUseCases';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -22,9 +23,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function CountryPage({ params }: Props) {
   const { slug } = await params;
   const title = `Phim Quốc Gia ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
+  const initialData = await getExploreMovies('quoc-gia', slug, 1).catch(() => undefined);
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
-      <SharedExplorePage filterType="quoc-gia" slug={slug} title={title} />
+      <SharedExplorePage filterType="quoc-gia" slug={slug} title={title} initialData={initialData} />
     </Suspense>
   );
 }

@@ -98,11 +98,11 @@ export const addToHistory = (
         thumbUrl: movie.thumbUrl,
       },
       force
-    );
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('movie-history-changed'));
-    }
+    ).then((synced) => {
+      if (synced && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('movie-history-changed'));
+      }
+    });
     return;
   }
 
@@ -161,134 +161,35 @@ export const addToHistory = (
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('movie-history-changed'));
   }
-
-  // Tự động đồng bộ lên Supabase với deviceId (chỉ khi có tiến độ xem thực tế > 0)
-  if (lastTime !== undefined && lastTime > 0) {
-    syncWatchHistory(
-      {
-        slug: movieToStore.slug,
-        source: movieToStore.source || 'phimapi',
-        serverIndex: movieToStore.serverIndex ?? 0,
-        episodeIndex: movieToStore.episodeIndex ?? 0,
-        episodeSlug: lastEpisodeSlug || movieToStore.lastEpisodeSlug,
-        position: lastTime,
-        duration: lastDuration ?? movieToStore.lastDuration ?? 0,
-        movieName: movieToStore.movieName || movieToStore.name,
-        posterUrl: movieToStore.posterUrl,
-        thumbUrl: movieToStore.thumbUrl,
-      },
-      force
-    );
-  }
 };
 
 export const removeFromHistory = (slug: string) => {
   const userId = getUserId();
   if (userId) {
-    // Xóa trực tiếp trên Supabase
-    deleteUserHistory(userId, slug);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('movie-history-changed'));
-    }
+    // Xóa trực tiếp trên Supabase rồi mới phát sự kiện cập nhật
+    deleteUserHistory(userId, slug).then(() => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('movie-history-changed'));
+      }
+    });
     return;
   }
 
   const history = getHistory();
   const filtered = history.filter((m) => m.slug !== slug);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
+  localStorage.removeItem(`watch-progress-${slug}`);
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('movie-history-changed'));
   }
-
-  // Tự động xoá trên Supabase
-  deleteOnlineWatchHistory(slug);
 };
-
-let isAutoSyncStarted = false;
 
 /**
- * Tự động kết nối Supabase khi mở web để fetch lịch sử mới nhất về thiết bị
+ * Giữ hàm tương thích ngược — các component cần lịch sử (ContinueWatching, HistoryPage, VideoPlayer)
+ * đã tự lấy dữ liệu theo đúng ngữ cảnh khi mount.
  */
-export const initAutoSyncHistory = async (force = false) => {
-  if (typeof window === 'undefined') return;
-  if (isAutoSyncStarted && !force) return;
-  isAutoSyncStarted = true;
-
-  const userId = getUserId();
-  try {
-    const onlineItems = userId
-      ? await fetchUserHistory(userId)
-      : await fetchOnlineWatchHistory();
-
-    if (Array.isArray(onlineItems)) {
-      const parsedMovies: Movie[] = onlineItems.map((item: any) => ({
-        id: String(item.id || item.slug),
-        name: item.movie_name || item.movieName || item.slug,
-        movieName: item.movie_name || item.movieName || item.slug,
-        slug: item.slug,
-        originName: '',
-        type: 'single',
-        posterUrl: item.poster_url || item.posterUrl || '',
-        thumbUrl: item.thumb_url || item.thumbUrl || item.poster_url || '',
-        year: 0,
-        quality: 'HD',
-        lang: '',
-        episodeCurrent: (item.episodeSlug || item.episode_slug)
-          ? `Tập ${(item.episodeSlug || item.episode_slug).replace('tap-', '')}`
-          : `Tập ${(item.episodeIndex ?? item.episode_index ?? 0) + 1}`,
-        episodeTotal: '',
-        time: '',
-        description: '',
-        categories: [],
-        countries: [],
-        actors: [],
-        directors: [],
-        tmdbVoteAverage: 0,
-        imdbRating: 0,
-        imdbId: '',
-        imdbVoteCount: 0,
-        source: item.source as any,
-        serverIndex: item.server_index ?? item.serverIndex ?? 0,
-        episodeIndex: item.episodeIndex ?? item.episode_index ?? 0,
-        lastEpisodeSlug:
-          item.episode_slug ||
-          item.episodeSlug ||
-          `tap-${(item.episodeIndex ?? item.episode_index ?? 0) + 1}`,
-        lastTime: Number(item.position) || 0,
-        lastDuration: Number(item.duration) || 0,
-      }));
-
-      if (!userId) {
-        const local = getHistory();
-        const mergedMap = new Map<string, Movie>();
-        local.forEach((m) => mergedMap.set(m.slug, m));
-        parsedMovies.forEach((m) => {
-          const existing = mergedMap.get(m.slug);
-          if (existing) {
-            mergedMap.set(m.slug, {
-              ...existing,
-              ...m,
-              lastTime: m.lastTime || existing.lastTime,
-              lastDuration: m.lastDuration || existing.lastDuration,
-            });
-          } else {
-            mergedMap.set(m.slug, m);
-          }
-        });
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(Array.from(mergedMap.values())));
-      }
-
-      window.dispatchEvent(new CustomEvent('movie-history-changed'));
-    }
-  } catch (err) {
-    console.warn('[userStore] Auto-sync Supabase history error:', err);
-  }
+export const initAutoSyncHistory = async (_force = false) => {
+  return;
 };
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('movie-user-changed', () => {
-    initAutoSyncHistory(true);
-  });
-}
 

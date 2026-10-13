@@ -7,13 +7,16 @@ import Pagination from '@/presentation/components/Pagination';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import FilterBar from '@/presentation/components/FilterBar';
 
+import { MovieListResult } from '@/domain/entities/Movie';
+
 interface SharedExplorePageProps {
   filterType: 'danh-sach' | 'the-loai' | 'quoc-gia' | 'nam-phat-hanh';
   slug: string;
   title?: string;
+  initialData?: MovieListResult;
 }
 
-export default function SharedExplorePage({ filterType, slug, title }: SharedExplorePageProps) {
+export default function SharedExplorePage({ filterType, slug, title, initialData }: SharedExplorePageProps) {
   const searchParams = useSearchParams();
   const pageStr = searchParams.get('page') || '1';
   const page = parseInt(pageStr, 10);
@@ -22,7 +25,14 @@ export default function SharedExplorePage({ filterType, slug, title }: SharedExp
   const country = searchParams.get('country') || undefined;
   const year = searchParams.get('year') || undefined;
 
-  const { data, isLoading, isError } = useExploreMovies(filterType, slug, page, { category, country, year });
+  const isDefaultQuery = page === 1 && !category && !country && !year;
+  const { data, isLoading, isError } = useExploreMovies(
+    filterType,
+    slug,
+    page,
+    { category, country, year },
+    isDefaultQuery ? initialData : undefined
+  );
   const displayTitle = title || (filterType === 'danh-sach' ? 'Danh sách phim' : 'Khám phá');
 
   if (isLoading) {

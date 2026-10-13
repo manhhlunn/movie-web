@@ -52,6 +52,7 @@ export default function EpisodeList({
                 <Link
                   key={ep.slug + '-' + si}
                   href={href}
+                  prefetch={false}
                   onClick={(e) => {
                     if (onSelectEpisode) {
                       e.preventDefault();

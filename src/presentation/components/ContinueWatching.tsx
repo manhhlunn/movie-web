@@ -72,21 +72,23 @@ export default function ContinueWatching() {
       setHistory(data.slice(0, 12));
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshHistory();
+      }
+    };
+
     refreshHistory();
-    window.addEventListener('focus', refreshHistory);
-    window.addEventListener('pageshow', refreshHistory);
     window.addEventListener('storage', refreshHistory);
     window.addEventListener('movie-history-changed', refreshHistory);
     window.addEventListener('movie-user-changed', refreshHistory);
-    document.addEventListener('visibilitychange', refreshHistory);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.removeEventListener('focus', refreshHistory);
-      window.removeEventListener('pageshow', refreshHistory);
       window.removeEventListener('storage', refreshHistory);
       window.removeEventListener('movie-history-changed', refreshHistory);
       window.removeEventListener('movie-user-changed', refreshHistory);
-      document.removeEventListener('visibilitychange', refreshHistory);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -125,7 +127,7 @@ export default function ContinueWatching() {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex-none w-64 md:w-80 group relative"
               >
-                <Link href={href} className="block relative">
+                <Link href={href} prefetch={false} className="block relative">
                   <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 shadow-lg">
                     <Image
                       src={movie.thumbUrl || movie.posterUrl || '/placeholder-poster.svg'}

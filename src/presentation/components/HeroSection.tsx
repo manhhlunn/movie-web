@@ -85,7 +85,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             priority
             className="object-cover object-center md:object-top"
             sizes="100vw"
-            quality={80}
+            quality={85}
           />
           <div className="absolute inset-0 bg-gradient-to-r from-black via-black/70 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
@@ -158,7 +158,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             </p>
 
             <div className="flex flex-wrap gap-3">
-              <Link href={firstEpisodeSlug ? `/xem-phim/${movie.slug}/${firstEpisodeSlug}` : `/phim/${movie.slug}`}>
+              <Link prefetch={false} href={firstEpisodeSlug ? `/xem-phim/${movie.slug}/${firstEpisodeSlug}` : `/phim/${movie.slug}`}>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -168,7 +168,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
                   Xem ngay
                 </motion.button>
               </Link>
-              <Link href={`/phim/${movie.slug}`}>
+              <Link prefetch={false} href={`/phim/${movie.slug}`}>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
