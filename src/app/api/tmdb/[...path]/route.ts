@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const ALLOWED_PATH_REGEX = /^((movie|tv)\/\d+\/(credits|images)|person\/\d+(\/(combined_credits|movie_credits|images))?)$/;
+const ALLOWED_PATH_REGEX = /^((movie|tv)\/\d+\/(credits|images)|person\/\d+(\/(combined_credits|movie_credits|images))?|search\/(multi|movie|tv))$/;
 
 export async function GET(
   request: NextRequest,

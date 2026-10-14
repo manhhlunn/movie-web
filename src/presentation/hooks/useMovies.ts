@@ -91,46 +91,108 @@ export function useExploreMovies(
   });
 }
 
-export function useMoviePeoples(slug: string, tmdb?: Movie['tmdb']) {
+export function useMoviePeoples(
+  slug: string,
+  tmdb?: Movie['tmdb'],
+  movieMeta?: { originName?: string; name?: string; actors?: string[] }
+) {
   return useQuery({
-    queryKey: ['movie-peoples-v2', slug, tmdb?.id],
+    queryKey: ['movie-peoples-v3', slug, tmdb?.id, movieMeta?.originName, movieMeta?.name],
     queryFn: async () => {
       try {
-        if (!tmdb?.id) return [];
-        const res = await fetch(`/api/tmdb/${tmdb.type}/${tmdb.id}/credits?language=en-US`);
-        if (!res.ok) return [];
-        const tmdbCredits = await res.json();
-        if (tmdbCredits?.cast?.length > 0) {
-          return tmdbCredits.cast.map((person: { id?: number; name: string; original_name?: string; character?: string; profile_path?: string }) => ({
-            id: person.id,
-            name: person.name,
-            originalName: (person.original_name && person.original_name !== person.name) ? person.original_name : null,
-            role: person.character,
-            image: person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : null
+        let tmdbId = tmdb?.id;
+        let tmdbType = tmdb?.type || 'movie';
+
+        // 1. Nếu chưa có tmdb.id, thử tìm kiếm tự động trên TMDB bằng originName hoặc name
+        if (!tmdbId && (movieMeta?.originName || movieMeta?.name)) {
+          const searchQuery = movieMeta.originName || movieMeta.name || '';
+          try {
+            const searchRes = await fetch(`/api/tmdb/search/multi?query=${encodeURIComponent(searchQuery)}&language=en-US`);
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const match = searchData?.results?.find((r: any) => r.media_type === 'tv' || r.media_type === 'movie');
+              if (match) {
+                tmdbId = String(match.id);
+                tmdbType = match.media_type;
+              }
+            }
+          } catch {
+            // bỏ qua lỗi tìm kiếm
+          }
+        }
+
+        // 2. Nếu có tmdbId (từ dữ liệu gốc hoặc từ tìm kiếm TMDB), lấy credits chi tiết
+        if (tmdbId) {
+          const res = await fetch(`/api/tmdb/${tmdbType}/${tmdbId}/credits?language=en-US`);
+          if (res.ok) {
+            const tmdbCredits = await res.json();
+            if (tmdbCredits?.cast?.length > 0) {
+              return tmdbCredits.cast.map((person: { id?: number; name: string; original_name?: string; character?: string; profile_path?: string }) => ({
+                id: person.id,
+                name: person.name,
+                originalName: (person.original_name && person.original_name !== person.name) ? person.original_name : null,
+                role: person.character,
+                image: person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : null,
+              }));
+            }
+          }
+        }
+
+        // 3. Fallback: Nếu TMDB không tìm thấy, sử dụng danh sách actors có sẵn từ PhimAPI
+        if (Array.isArray(movieMeta?.actors) && movieMeta.actors.length > 0) {
+          return movieMeta.actors.map((actorName: string) => ({
+            id: undefined,
+            name: actorName,
+            originalName: null,
+            role: 'Diễn viên',
+            image: null,
           }));
         }
+
         return [];
       } catch {
         return [];
       }
     },
-    enabled: !!tmdb?.id,
+    enabled: !!tmdb?.id || !!movieMeta?.originName || !!movieMeta?.name || (movieMeta?.actors?.length || 0) > 0,
     staleTime: 24 * 60 * 60 * 1000,
   });
 }
 
-export function useMovieImages(slug: string, tmdb?: Movie['tmdb']) {
+export function useMovieImages(
+  slug: string,
+  tmdb?: Movie['tmdb'],
+  movieMeta?: { originName?: string; name?: string }
+) {
   return useQuery({
-    queryKey: ['movie-images-v2', slug, tmdb?.id],
+    queryKey: ['movie-images-v3', slug, tmdb?.id, movieMeta?.originName, movieMeta?.name],
     queryFn: async () => {
       try {
-        if (!tmdb?.id) return [];
-        const res = await fetch(`/api/tmdb/${tmdb.type}/${tmdb.id}/images?language=vi-VN`);
+        let tmdbId = tmdb?.id;
+        let tmdbType = tmdb?.type || 'movie';
+
+        if (!tmdbId && (movieMeta?.originName || movieMeta?.name)) {
+          const searchQuery = movieMeta.originName || movieMeta.name || '';
+          try {
+            const searchRes = await fetch(`/api/tmdb/search/multi?query=${encodeURIComponent(searchQuery)}&language=vi-VN`);
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const match = searchData?.results?.find((r: any) => r.media_type === 'tv' || r.media_type === 'movie');
+              if (match) {
+                tmdbId = String(match.id);
+                tmdbType = match.media_type;
+              }
+            }
+          } catch {}
+        }
+
+        if (!tmdbId) return [];
+        const res = await fetch(`/api/tmdb/${tmdbType}/${tmdbId}/images?language=vi-VN`);
         if (!res.ok) return [];
         const tmdbImgs = await res.json();
         if (tmdbImgs?.backdrops?.length > 0) {
           return tmdbImgs.backdrops.slice(0, 15).map((img: { file_path: string }) => ({
-            url: `https://image.tmdb.org/t/p/original${img.file_path}`
+            url: `https://image.tmdb.org/t/p/original${img.file_path}`,
           }));
         }
         return [];
@@ -138,7 +200,7 @@ export function useMovieImages(slug: string, tmdb?: Movie['tmdb']) {
         return [];
       }
     },
-    enabled: !!tmdb?.id,
+    enabled: !!tmdb?.id || !!movieMeta?.originName || !!movieMeta?.name,
     staleTime: 24 * 60 * 60 * 1000,
   });
 }

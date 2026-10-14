@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play, Calendar, Clock, Star, Film, Users, Heart } from 'lucide-react';
+import { Play, Calendar, Clock, Star, Film, Users, Heart, Loader2 } from 'lucide-react';
 import { useMovieDetails, useMoviePeoples } from '@/presentation/hooks/useMovies';
 import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
@@ -34,9 +34,25 @@ export default function MovieDetailClient({
   const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || propSource || initialMovie?.source || 'phimapi';
 
   const { data: movie, isLoading, isError } = useMovieDetails(slug, sourceParam, { initialData: initialMovie });
-  const { data: peoples } = useMoviePeoples(slug, movie?.tmdb);
+  const { data: peoples } = useMoviePeoples(slug, movie?.tmdb, {
+    originName: movie?.originName,
+    name: movie?.name,
+    actors: movie?.actors,
+  });
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [loadingActorId, setLoadingActorId] = useState<number | string | null>(null);
+
+  // Tự động reset spinner khi người dùng Back lại trang (popstate / pageshow bfcache)
+  useEffect(() => {
+    const handleReset = () => setLoadingActorId(null);
+    window.addEventListener('pageshow', handleReset);
+    window.addEventListener('popstate', handleReset);
+    return () => {
+      window.removeEventListener('pageshow', handleReset);
+      window.removeEventListener('popstate', handleReset);
+    };
+  }, []);
 
   const combinedServers = movie?.servers || [];
 
@@ -324,11 +340,18 @@ export default function MovieDetailClient({
                 const actorHref = person.id
                   ? `/dien-vien/${person.id}?name=${encodeURIComponent(person.name)}`
                   : undefined;
+                const isLoadingThisActor = loadingActorId === person.id;
                 return (
                   <Link
                     key={person.id || i}
                     href={actorHref || '#'}
                     prefetch={false}
+                    onClick={() => {
+                      if (person.id) {
+                        setLoadingActorId(person.id);
+                        setTimeout(() => setLoadingActorId(null), 1500);
+                      }
+                    }}
                     className={cn(
                       "flex flex-col items-center text-center min-w-[100px] group transition-all",
                       actorHref ? "cursor-pointer" : "cursor-default pointer-events-none"
@@ -343,11 +366,19 @@ export default function MovieDetailClient({
                           fill
                           sizes="96px"
                           quality={75}
-                          className="object-cover transition-transform duration-300 group-hover:scale-110"
+                          className={cn(
+                            "object-cover transition-transform duration-300 group-hover:scale-110",
+                            isLoadingThisActor && "opacity-40"
+                          )}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-zinc-600 bg-zinc-800">
                           {person.name.charAt(0)}
+                        </div>
+                      )}
+                      {isLoadingThisActor && (
+                        <div className="absolute inset-0 bg-black/60 backdrop-blur-[1px] flex items-center justify-center z-10">
+                          <Loader2 className="w-6 h-6 text-red-500 animate-spin" />
                         </div>
                       )}
                     </div>

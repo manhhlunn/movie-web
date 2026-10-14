@@ -1,17 +1,18 @@
 import { Movie } from '@/domain/entities/Movie';
-import { mapV1ListResponse } from '@/data/mappers/OPhimMapper';
+import { mapMovieFromList, mapV1ListResponse } from '@/data/mappers/OPhimMapper';
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 export interface ActorPersonInfo {
   id: string | number;
-  name: string;
+  name: string; // Tên tiếng Anh chuẩn từ TMDB (en-US)
   originalName?: string | null;
   biography?: string | null;
   birthday?: string | null;
   placeOfBirth?: string | null;
   profileUrl?: string | null;
   knownForDepartment?: string | null;
+  images?: string[];
 }
 
 export interface ActorDetailResult {
@@ -29,6 +30,21 @@ function normalizeTitle(str: string): string {
     .replace(/[^a-z0-9]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+async function fetchWithRetry(url: string, init?: RequestInit, retries = 2): Promise<Response> {
+  let lastError: any;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      lastError = err;
+      if (i < retries) {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -49,15 +65,16 @@ export async function getActorMovies(
     placeOfBirth: null,
     profileUrl: null,
     knownForDepartment: 'Diễn xuất',
+    images: [],
   };
 
   let tmdbCast: any[] = [];
 
-  // 1. Gọi TMDB API lấy thông tin diễn viên & danh sách phim tham gia
+  // 1. Gọi TMDB API lấy thông tin diễn viên (tiếng Anh chuẩn en-US), danh sách phim & tất cả ảnh
   if (token) {
     try {
-      const [personRes, creditsRes] = await Promise.allSettled([
-        fetch(`${TMDB_BASE_URL}/person/${personId}?language=vi-VN`, {
+      const [personRes, creditsRes, imagesRes] = await Promise.allSettled([
+        fetchWithRetry(`${TMDB_BASE_URL}/person/${personId}?language=en-US`, {
           headers: {
             accept: 'application/json',
             Authorization: `Bearer ${token}`,
@@ -65,7 +82,15 @@ export async function getActorMovies(
           signal: AbortSignal.timeout(6000),
           next: { revalidate: 86400 },
         }),
-        fetch(`${TMDB_BASE_URL}/person/${personId}/combined_credits?language=en-US`, {
+        fetchWithRetry(`${TMDB_BASE_URL}/person/${personId}/combined_credits?language=en-US`, {
+          headers: {
+            accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          signal: AbortSignal.timeout(6000),
+          next: { revalidate: 86400 },
+        }),
+        fetchWithRetry(`${TMDB_BASE_URL}/person/${personId}/images`, {
           headers: {
             accept: 'application/json',
             Authorization: `Bearer ${token}`,
@@ -74,6 +99,17 @@ export async function getActorMovies(
           next: { revalidate: 86400 },
         }),
       ]);
+
+      // Lấy TẤT CẢ ảnh chân dung của diễn viên
+      let actorImages: string[] = [];
+      if (imagesRes.status === 'fulfilled' && imagesRes.value.ok) {
+        const imgData = await imagesRes.value.json();
+        if (Array.isArray(imgData.profiles)) {
+          actorImages = imgData.profiles
+            .filter((p: any) => p && p.file_path)
+            .map((p: any) => `https://image.tmdb.org/t/p/h632${p.file_path}`);
+        }
+      }
 
       if (personRes.status === 'fulfilled' && personRes.value.ok) {
         const pData = await personRes.value.json();
@@ -86,9 +122,13 @@ export async function getActorMovies(
           placeOfBirth: pData.place_of_birth || null,
           profileUrl: pData.profile_path
             ? `https://image.tmdb.org/t/p/h632${pData.profile_path}`
-            : null,
+            : (actorImages[0] || null),
           knownForDepartment: pData.known_for_department || 'Diễn xuất',
+          images: actorImages,
         };
+      } else if (actorImages.length > 0) {
+        personInfo.images = actorImages;
+        if (!personInfo.profileUrl) personInfo.profileUrl = actorImages[0];
       }
 
       if (creditsRes.status === 'fulfilled' && creditsRes.value.ok) {
@@ -102,116 +142,125 @@ export async function getActorMovies(
     }
   }
 
-  // 2. Lọc và xếp hạng các phim nổi bật nhất của diễn viên từ TMDB
+  // 2. Lọc bỏ item rác, trùng lặp và sắp xếp theo năm phát hành (mới nhất -> cũ nhất)
+  const seenTmdbIds = new Set<number | string>();
   const filteredCredits = tmdbCast
-    .filter((m: any) => m && (m.title || m.name || m.original_title || m.original_name))
-    // Ưu tiên phim có lượt đánh giá cao / độ nổi tiếng cao
-    .sort((a: any, b: any) => {
-      const scoreA = (b.vote_count || 0) * 2 + (b.popularity || 0);
-      const scoreB = (a.vote_count || 0) * 2 + (a.popularity || 0);
-      return scoreA - scoreB;
+    .filter((m: any) => {
+      if (!m || (!m.title && !m.name && !m.original_title && !m.original_name)) return false;
+      const mId = m.id;
+      if (mId) {
+        if (seenTmdbIds.has(mId)) return false;
+        seenTmdbIds.add(mId);
+      }
+      return true;
     })
-    // Giới hạn 24 phim nổi bật nhất để tối ưu thời gian phản hồi và hạn chế spam PhimAPI
-    .slice(0, 24);
+    .sort((a: any, b: any) => {
+      const dateA = a.release_date || a.first_air_date || '';
+      const dateB = b.release_date || b.first_air_date || '';
+      return dateB.localeCompare(dateA);
+    });
 
   const availableMovies: Movie[] = [];
   const seenSlugs = new Set<string>();
 
-  // 3. Quét đối soát từng phim với PhimAPI
+  // 3. Tra cứu trực tiếp TẤT CẢ phim với PhimAPI theo TMDB ID qua endpoint /tmdb/{type}/{id}
   if (filteredCredits.length > 0) {
-    const searchPromises = filteredCredits.map(async (m: any) => {
-      const origTitle = m.original_title || m.original_name || '';
-      const localTitle = m.title || m.name || '';
-      const searchKeyword = origTitle || localTitle;
-      const targetYear = (m.release_date || m.first_air_date || '').slice(0, 4);
+    const BATCH_SIZE = 30;
+    for (let i = 0; i < filteredCredits.length; i += BATCH_SIZE) {
+      const chunk = filteredCredits.slice(i, i + BATCH_SIZE);
+      const lookups = chunk.map(async (m: any) => {
+        const mId = m.id;
+        if (!mId) return null;
+        const primaryType = (m.media_type === 'tv' || (!m.media_type && m.first_air_date)) ? 'tv' : 'movie';
+        const secondaryType = primaryType === 'tv' ? 'movie' : 'tv';
 
-      if (!searchKeyword) return null;
-
-      try {
-        const res = await fetch(
-          `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=5`,
-          {
-            signal: AbortSignal.timeout(5000),
+        try {
+          // 1. Thử tra cứu theo type chính từ TMDB (movie hoặc tv)
+          let res = await fetch(`https://phimapi.com/tmdb/${primaryType}/${mId}`, {
+            signal: AbortSignal.timeout(4000),
             next: { revalidate: 86400 }, // Cache 24h
+          });
+
+          // 2. Nếu 404, thử nốt type còn lại đề phòng phân loại giữa TMDB và PhimAPI khác nhau
+          if (!res.ok && res.status === 404) {
+            res = await fetch(`https://phimapi.com/tmdb/${secondaryType}/${mId}`, {
+              signal: AbortSignal.timeout(4000),
+              next: { revalidate: 86400 },
+            });
           }
-        );
 
-        if (!res.ok) return null;
-        const data = await res.json();
-        const mapped = mapV1ListResponse(data as any);
-        const items = mapped?.items || [];
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.status && data?.movie) {
+              return mapMovieFromList(data.movie, 'https://phimimg.com');
+            }
+          }
 
-        if (items.length === 0) return null;
+          // 3. Fallback: Nếu không tìm thấy qua TMDB ID (ví dụ PhimAPI lưu tmdb.id là null), tìm kiếm theo tên phim trên PhimAPI
+          const origTitle = m.original_title || m.original_name || '';
+          const localTitle = m.title || m.name || '';
+          const searchKeyword = localTitle || origTitle;
+          const targetYear = (m.release_date || m.first_air_date || '').slice(0, 4);
 
-        // So khớp thông minh: Tên + Năm
-        const normOrig = normalizeTitle(origTitle);
-        const normLocal = normalizeTitle(localTitle);
+          if (searchKeyword) {
+            const searchRes = await fetch(
+              `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(searchKeyword)}&limit=10`,
+              {
+                signal: AbortSignal.timeout(4000),
+                next: { revalidate: 86400 },
+              }
+            );
 
-        const match =
-          items.find((it) => {
-            const itOrig = normalizeTitle(it.originName || '');
-            const itName = normalizeTitle(it.name || '');
-            const itYear = it.year ? String(it.year) : '';
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const mapped = mapV1ListResponse(searchData as any);
+              const items = mapped?.items || [];
 
-            const isTitleMatch =
-              (normOrig && (itOrig.includes(normOrig) || normOrig.includes(itOrig))) ||
-              (normLocal && (itName.includes(normLocal) || normLocal.includes(itName)));
+              if (items.length > 0) {
+                const normOrig = normalizeTitle(origTitle);
+                const normLocal = normalizeTitle(localTitle);
 
-            const isYearMatch =
-              !targetYear || !itYear || Math.abs(Number(targetYear) - Number(itYear)) <= 1;
+                const match = items.find((it) => {
+                  const itOrig = normalizeTitle(it.originName || '');
+                  const itName = normalizeTitle(it.name || '');
+                  const itYear = it.year ? String(it.year) : '';
 
-            return isTitleMatch && isYearMatch;
-          }) ||
-          items.find((it) => {
-            const itYear = it.year ? String(it.year) : '';
-            return !targetYear || !itYear || Math.abs(Number(targetYear) - Number(itYear)) <= 1;
-          }) ||
-          items[0];
+                  const isTitleMatch =
+                    (normOrig && (itOrig.includes(normOrig) || normOrig.includes(itOrig) || itName.includes(normOrig) || normOrig.includes(itName))) ||
+                    (normLocal && (itOrig.includes(normLocal) || normLocal.includes(itOrig) || itName.includes(normLocal) || normLocal.includes(itName)));
 
-        return match || null;
-      } catch {
+                  const isYearMatch = !targetYear || !itYear || Math.abs(Number(targetYear) - Number(itYear)) <= 1;
+
+                  return isTitleMatch && isYearMatch;
+                });
+
+                if (match) {
+                  return match;
+                }
+              }
+            }
+          }
+        } catch {
+          // Bỏ qua lỗi kết nối từng phim lẻ
+        }
         return null;
-      }
-    });
+      });
 
-    const searchResults = await Promise.allSettled(searchPromises);
-
-    for (const res of searchResults) {
-      if (res.status === 'fulfilled' && res.value) {
-        const movie = res.value;
-        if (!seenSlugs.has(movie.slug)) {
-          seenSlugs.add(movie.slug);
-          availableMovies.push(movie);
-        }
-      }
-    }
-  }
-
-  // 4. Cơ chế Fallback: Nếu không tìm thấy qua TMDB (hoặc TMDB bị chặn), thử search trực tiếp bằng tên diễn viên
-  const actorSearchName = (personInfo.name || fallbackName || '').trim();
-  if (availableMovies.length === 0 && actorSearchName && actorSearchName !== 'Diễn viên') {
-    try {
-      const res = await fetch(
-        `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(actorSearchName)}&limit=24`,
-        {
-          signal: AbortSignal.timeout(5000),
-          next: { revalidate: 86400 },
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const mapped = mapV1ListResponse(data as any);
-        for (const m of mapped?.items || []) {
-          if (!seenSlugs.has(m.slug)) {
-            seenSlugs.add(m.slug);
-            availableMovies.push(m);
+      const chunkResults = await Promise.allSettled(lookups);
+      for (const res of chunkResults) {
+        if (res.status === 'fulfilled' && res.value) {
+          const movie = res.value;
+          if (!seenSlugs.has(movie.slug)) {
+            seenSlugs.add(movie.slug);
+            availableMovies.push(movie);
           }
         }
       }
-    } catch {
-      // Ignore
     }
   }
+
+  // Sắp xếp danh sách phim hiển thị theo năm phát hành giảm dần (mới nhất lên đầu)
+  availableMovies.sort((a, b) => (b.year || 0) - (a.year || 0));
 
   return {
     person: personInfo,

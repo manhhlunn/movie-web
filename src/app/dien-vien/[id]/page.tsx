@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Film, ArrowLeft, Clapperboard, Sparkles } from 'lucide-react';
 import { getActorMovies } from '@/application/useCases/ActorUseCases';
 import MovieCard from '@/presentation/components/MovieCard';
+import ActorPhotoGallery from '@/presentation/components/ActorPhotoGallery';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -103,6 +104,11 @@ export default async function ActorPage({ params, searchParams }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Bộ sưu tập hình ảnh diễn viên */}
+      {person.images && person.images.length > 0 && (
+        <ActorPhotoGallery name={person.name} images={person.images} />
+      )}
 
       {/* Tiêu đề danh sách phim */}
       <div className="flex items-center justify-between mb-8 pb-4 border-b border-zinc-800/80">
