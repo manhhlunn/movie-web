@@ -106,8 +106,6 @@ export async function syncWatchHistory(params: SyncHistoryParams, force = false)
   // Chỉ đồng bộ lên Supabase khi người dùng đã nhập userId
   if (!userId) return false;
 
-  const deviceId = getDeviceId();
-
   const now = Date.now();
   const lastSync = lastSyncedMap.get(params.slug);
 
@@ -133,7 +131,6 @@ export async function syncWatchHistory(params: SyncHistoryParams, force = false)
       },
       body: JSON.stringify({
         userId,
-        deviceId,
         slug: params.slug,
         source: params.source,
         serverIndex: params.serverIndex,

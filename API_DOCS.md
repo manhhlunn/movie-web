@@ -37,8 +37,7 @@ Content-Type: application/json
 #### Request Body:
 | Field | Type | Bắt buộc | Mô tả |
 | :--- | :--- | :--- | :--- |
-| `userId` | string | Tùy chọn* | ID người dùng (*Cần `userId` hoặc `deviceId`) |
-| `deviceId` | string | Tùy chọn* | UUID / ID định danh thiết bị |
+| `userId` | string | **Bắt buộc** | ID người dùng (hỗ trợ alias `syncId` để tương thích ngược) |
 | `slug` | string | **Bắt buộc** | Slug định danh phim (ví dụ: `sat-thu-noi-tro-vo-toi-la-sat-thu`) |
 | `source` | string | **Bắt buộc** | Nguồn phim (`phimapi`, `ophim`, `nguonc`, `vsmov`) |
 | `serverIndex` | integer | Tùy chọn | Vị trí server đang xem (mặc định: `0`) |
@@ -73,9 +72,8 @@ Content-Type: application/json
   "success": true,
   "data": {
     "id": 12,
-    "syncId": "user_123456",
     "userId": "user_123456",
-    "deviceId": null,
+    "syncId": "user_123456",
     "slug": "sat-thu-noi-tro-vo-toi-la-sat-thu",
     "source": "phimapi",
     "serverIndex": 0,
@@ -97,7 +95,7 @@ Content-Type: application/json
 
 * **Endpoint**: `GET /api/history`
 * **Query Parameters**:
-  * `userId`: ID người dùng (hoặc `deviceId`)
+  * `userId`: ID người dùng (bắt buộc, hỗ trợ `syncId` cho client cũ)
   * `slug` *(tùy chọn)*: Nếu truyền `slug`, API trả về tiến độ của đúng phim đó. Nếu không truyền, trả về danh sách lịch sử.
   * `limit` *(tùy chọn)*: Số lượng bản ghi tối đa (mặc định: `50`, tối đa: `100`).
 
@@ -111,9 +109,8 @@ Response:
   "success": true,
   "item": {
     "id": 12,
-    "syncId": "user_123456",
     "userId": "user_123456",
-    "deviceId": null,
+    "syncId": "user_123456",
     "slug": "sat-thu-noi-tro-vo-toi-la-sat-thu",
     "source": "phimapi",
     "serverIndex": 0,
@@ -140,9 +137,8 @@ Response:
   "items": [
     {
       "id": 12,
-      "syncId": "user_123456",
       "userId": "user_123456",
-      "deviceId": null,
+      "syncId": "user_123456",
       "slug": "sat-thu-noi-tro-vo-toi-la-sat-thu",
       "source": "phimapi",
       "serverIndex": 0,
@@ -165,8 +161,8 @@ Response:
 
 * **Endpoint**: `DELETE /api/history`
 * **Query Parameters**:
-  * `userId` hoặc `deviceId`: Bắt buộc.
-  * `slug` *(tùy chọn)*: Xóa 1 phim cụ thể. Nếu không truyền, xóa toàn bộ lịch sử của người dùng/thiết bị.
+  * `userId`: Bắt buộc (hỗ trợ `syncId` cho client cũ).
+  * `slug` *(tùy chọn)*: Xóa 1 phim cụ thể. Nếu không truyền, xóa toàn bộ lịch sử của người dùng.
 
 #### Response:
 ```json

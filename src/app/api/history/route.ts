@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export interface HistoryPayload {
-  userId?: string;
-  deviceId?: string;
+  userId: string;
   source: string;
   slug: string;
   serverIndex: number;
@@ -37,11 +36,12 @@ function formatHistoryRow(row: any) {
       ? Math.round(rawDur * 1000)
       : Math.round(rawDur);
 
+  const userId = row.user_id || row.userId || row.sync_id || row.syncId || '';
+
   return {
     id: row.id,
-    syncId: row.sync_id || row.syncId || '',
-    userId: row.user_id || row.userId || null,
-    deviceId: row.device_id || row.deviceId || null,
+    userId,
+    syncId: userId, // Giữ tương thích ngược cho client cũ
     slug: row.slug,
     source: row.source,
     serverIndex: row.server_index ?? row.serverIndex ?? 0,
@@ -72,9 +72,8 @@ export async function OPTIONS() {
 export async function POST(request: NextRequest) {
   try {
     const body: any = await request.json();
-    const userId = body.userId || body.id;
+    const userId = (body.userId || body.id || body.syncId || body.deviceId)?.toString().trim();
     const {
-      deviceId,
       source,
       slug,
       serverIndex = 0,
@@ -93,11 +92,9 @@ export async function POST(request: NextRequest) {
       thumb_url,
     } = body;
 
-    const syncId = userId || deviceId;
-
-    if (!syncId) {
+    if (!userId) {
       return NextResponse.json(
-        { success: false, error: 'Thiếu định danh người dùng: userId hoặc deviceId là bắt buộc.' },
+        { success: false, error: 'Thiếu định danh người dùng: userId là bắt buộc.' },
         { status: 400 }
       );
     }
@@ -150,7 +147,7 @@ export async function POST(request: NextRequest) {
       const { data: existing } = await supabase
         .from('watch_history')
         .select('position, duration')
-        .eq('sync_id', syncId)
+        .eq('user_id', userId)
         .eq('slug', slug)
         .maybeSingle();
 
@@ -161,9 +158,7 @@ export async function POST(request: NextRequest) {
     }
 
     const payloadToSave = {
-      sync_id: syncId,
-      user_id: userId || null,
-      device_id: deviceId || null,
+      user_id: userId,
       slug,
       source,
       server_index: effectiveServerIndex,
@@ -179,7 +174,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('watch_history')
       .upsert(payloadToSave, {
-        onConflict: 'sync_id,slug',
+        onConflict: 'user_id,slug',
       })
       .select()
       .single();
@@ -208,16 +203,13 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId') || searchParams.get('id');
-    const deviceId = searchParams.get('deviceId');
+    const userId = (searchParams.get('userId') || searchParams.get('id') || searchParams.get('syncId') || searchParams.get('deviceId'))?.trim();
     const slug = searchParams.get('slug');
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50));
 
-    const syncId = userId || deviceId;
-
-    if (!syncId) {
+    if (!userId) {
       return NextResponse.json(
-        { success: false, error: 'Thiếu định danh người dùng: userId hoặc deviceId là bắt buộc.' },
+        { success: false, error: 'Thiếu định danh người dùng: userId là bắt buộc.' },
         { status: 400 }
       );
     }
@@ -234,7 +226,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await supabase
         .from('watch_history')
         .select('*')
-        .eq('sync_id', syncId)
+        .eq('user_id', userId)
         .eq('slug', slug)
         .maybeSingle();
 
@@ -255,7 +247,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from('watch_history')
       .select('*')
-      .eq('sync_id', syncId)
+      .eq('user_id', userId)
       .order('updated_at', { ascending: false })
       .limit(limit);
 
@@ -283,15 +275,12 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    const deviceId = searchParams.get('deviceId');
+    const userId = (searchParams.get('userId') || searchParams.get('id') || searchParams.get('syncId') || searchParams.get('deviceId'))?.trim();
     const slug = searchParams.get('slug');
 
-    const syncId = userId || deviceId;
-
-    if (!syncId) {
+    if (!userId) {
       return NextResponse.json(
-        { success: false, error: 'Thiếu định danh người dùng: userId hoặc deviceId là bắt buộc.' },
+        { success: false, error: 'Thiếu định danh người dùng: userId là bắt buộc.' },
         { status: 400 }
       );
     }
@@ -303,7 +292,7 @@ export async function DELETE(request: NextRequest) {
       });
     }
 
-    let query = supabase.from('watch_history').delete().eq('sync_id', syncId);
+    let query = supabase.from('watch_history').delete().eq('user_id', userId);
     if (slug) {
       query = query.eq('slug', slug);
     }

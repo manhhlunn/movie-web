@@ -22,11 +22,12 @@ function formatHistoryRow(row: any) {
       ? Math.round(rawDur * 1000)
       : Math.round(rawDur);
 
+  const userId = row.user_id || row.userId || row.sync_id || row.syncId || '';
+
   return {
     id: row.id,
-    syncId: row.sync_id || row.syncId || '',
-    userId: row.user_id || row.userId || null,
-    deviceId: row.device_id || row.deviceId || null,
+    userId,
+    syncId: userId, // Giữ tương thích ngược cho client cũ
     slug: row.slug,
     source: row.source,
     serverIndex: row.server_index ?? row.serverIndex ?? 0,
@@ -90,7 +91,7 @@ export async function GET(
       const { data, error } = await supabase
         .from('watch_history')
         .select('*')
-        .eq('sync_id', userId)
+        .eq('user_id', userId)
         .eq('slug', slug)
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -112,7 +113,7 @@ export async function GET(
     const { data, error } = await supabase
       .from('watch_history')
       .select('*')
-      .eq('sync_id', userId)
+      .eq('user_id', userId)
       .order('updated_at', { ascending: false })
       .limit(limit);
 
@@ -154,10 +155,10 @@ export async function POST(
       );
     }
 
-    const body = await request.json();
+    const body: any = await request.json();
     const {
-      slug,
       source,
+      slug,
       serverIndex = 0,
       server_index,
       episodeIndex = 0,
@@ -221,7 +222,7 @@ export async function POST(
       const { data: existing } = await supabase
         .from('watch_history')
         .select('position, duration')
-        .eq('sync_id', userId)
+        .eq('user_id', userId)
         .eq('slug', slug)
         .maybeSingle();
 
@@ -232,9 +233,7 @@ export async function POST(
     }
 
     const payloadToSave = {
-      sync_id: userId,
       user_id: userId,
-      device_id: body.deviceId || null,
       slug,
       source,
       server_index: effectiveServerIndex,
@@ -250,7 +249,7 @@ export async function POST(
     const { data, error } = await supabase
       .from('watch_history')
       .upsert(payloadToSave, {
-        onConflict: 'sync_id,slug',
+        onConflict: 'user_id,slug',
       })
       .select()
       .single();
@@ -303,7 +302,7 @@ export async function DELETE(
     const { searchParams } = new URL(request.url);
     const slug = searchParams.get('slug');
 
-    let query = supabase.from('watch_history').delete().eq('sync_id', userId);
+    let query = supabase.from('watch_history').delete().eq('user_id', userId);
     if (slug) {
       query = query.eq('slug', slug);
     }
