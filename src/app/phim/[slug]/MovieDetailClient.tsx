@@ -321,18 +321,19 @@ export default function MovieDetailClient({
             </h3>
             <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide">
               {peoples.map((person: any, i: number) => {
-                const tmdbUrl = person.id ? `https://www.themoviedb.org/person/${person.id}` : undefined;
+                const actorHref = person.id
+                  ? `/dien-vien/${person.id}?name=${encodeURIComponent(person.name)}`
+                  : undefined;
                 return (
-                  <a
+                  <Link
                     key={person.id || i}
-                    href={tmdbUrl || '#'}
-                    target={tmdbUrl ? '_blank' : undefined}
-                    rel={tmdbUrl ? 'noopener noreferrer' : undefined}
+                    href={actorHref || '#'}
+                    prefetch={false}
                     className={cn(
                       "flex flex-col items-center text-center min-w-[100px] group transition-all",
-                      tmdbUrl ? "cursor-pointer" : "cursor-default pointer-events-none"
+                      actorHref ? "cursor-pointer" : "cursor-default pointer-events-none"
                     )}
-                    title={tmdbUrl ? `Xem thông tin diễn viên ${person.name} trên TMDB` : person.name}
+                    title={actorHref ? `Xem danh sách phim của ${person.name}` : person.name}
                   >
                     <div className="relative w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden mb-3 border-2 border-zinc-800 group-hover:border-red-500 group-hover:scale-105 transition-all duration-300 shadow-xl bg-zinc-900">
                       {person.image ? (
@@ -363,7 +364,7 @@ export default function MovieDetailClient({
                     <span className="text-[11px] text-zinc-500 mt-1 line-clamp-1 px-1">
                       {person.role || 'Diễn viên'}
                     </span>
-                  </a>
+                  </Link>
                 );
               })}
             </div>
