@@ -91,13 +91,84 @@ export function useExploreMovies(
   });
 }
 
+interface TmdbMatchMeta {
+  originName?: string;
+  name?: string;
+  year?: number | string;
+  type?: string;
+}
+
+function normalizeText(s?: string): string {
+  if (!s) return '';
+  return s
+    .toLowerCase()
+    .replace(/[-_.:/]/g, ' ')
+    .replace(/[^a-z0-9\s]/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Tìm kiếm phim trên TMDB theo điều kiện nghiêm ngặt:
+ * Bắt buộc thỏa mãn ĐỒNG THỜI cả 3 tiêu chí:
+ * 1. Khớp chính xác tên gốc (originName hoặc name)
+ * 2. Khớp đúng định dạng phim (phim bộ -> tv, phim lẻ -> movie)
+ * 3. Khớp đúng năm phát hành (first_air_date hoặc release_date phải cùng năm)
+ * Tuyệt đối không dùng cơ chế đoán hoặc tính điểm mờ (score-based).
+ */
+function findStrictTmdbMatch(
+  results: any[],
+  meta?: TmdbMatchMeta
+): { id: string; type: 'movie' | 'tv' } | null {
+  const candidates = (results || []).filter(
+    (r: any) => r.media_type === 'tv' || r.media_type === 'movie'
+  );
+  if (candidates.length === 0) return null;
+
+  const targetOrigin = normalizeText(meta?.originName || meta?.name);
+  if (!targetOrigin) return null;
+
+  const isSeries = meta?.type === 'series' || meta?.type === 'tvshows';
+  const isSingle = meta?.type === 'single';
+  const targetYear = meta?.year ? parseInt(String(meta.year), 10) : null;
+
+  for (const item of candidates) {
+    // 1. So khớp chính xác tên gốc
+    const itemTitle = normalizeText(item.title || item.name);
+    const itemOrig = normalizeText(item.original_title || item.original_name);
+    const isNameMatch = itemOrig === targetOrigin || itemTitle === targetOrigin;
+    if (!isNameMatch) continue;
+
+    // 2. So khớp định dạng phim (phim bộ -> tv, phim lẻ -> movie)
+    if (isSeries && item.media_type !== 'tv') continue;
+    if (isSingle && item.media_type !== 'movie') continue;
+
+    // 3. So khớp năm phát hành
+    if (targetYear && !isNaN(targetYear)) {
+      const itemDate = item.first_air_date || item.release_date || '';
+      const itemYear = parseInt(itemDate.slice(0, 4), 10);
+      if (isNaN(itemYear) || itemYear !== targetYear) {
+        continue;
+      }
+    }
+
+    // Đạt đủ cả 3 tiêu chí nghiêm ngặt
+    return {
+      id: String(item.id),
+      type: item.media_type as 'movie' | 'tv',
+    };
+  }
+
+  return null;
+}
+
 export function useMoviePeoples(
   slug: string,
   tmdb?: Movie['tmdb'],
-  movieMeta?: { originName?: string; name?: string; actors?: string[] }
+  movieMeta?: { originName?: string; name?: string; actors?: string[]; year?: number | string; type?: string }
 ) {
   return useQuery({
-    queryKey: ['movie-peoples-v3', slug, tmdb?.id, movieMeta?.originName, movieMeta?.name],
+    queryKey: ['movie-peoples-v4', slug, tmdb?.id, movieMeta?.originName, movieMeta?.name, movieMeta?.year, movieMeta?.type],
     queryFn: async () => {
       try {
         let tmdbId = tmdb?.id;
@@ -110,10 +181,10 @@ export function useMoviePeoples(
             const searchRes = await fetch(`/api/tmdb/search/multi?query=${encodeURIComponent(searchQuery)}&language=en-US`);
             if (searchRes.ok) {
               const searchData = await searchRes.json();
-              const match = searchData?.results?.find((r: any) => r.media_type === 'tv' || r.media_type === 'movie');
-              if (match) {
-                tmdbId = String(match.id);
-                tmdbType = match.media_type;
+              const strictMatch = findStrictTmdbMatch(searchData?.results, movieMeta);
+              if (strictMatch) {
+                tmdbId = strictMatch.id;
+                tmdbType = strictMatch.type;
               }
             }
           } catch {
@@ -123,30 +194,59 @@ export function useMoviePeoples(
 
         // 2. Nếu có tmdbId (từ dữ liệu gốc hoặc từ tìm kiếm TMDB), lấy credits chi tiết
         if (tmdbId) {
-          const res = await fetch(`/api/tmdb/${tmdbType}/${tmdbId}/credits?language=en-US`);
-          if (res.ok) {
-            const tmdbCredits = await res.json();
-            if (tmdbCredits?.cast?.length > 0) {
-              return tmdbCredits.cast.map((person: { id?: number; name: string; original_name?: string; character?: string; profile_path?: string }) => ({
-                id: person.id,
-                name: person.name,
-                originalName: (person.original_name && person.original_name !== person.name) ? person.original_name : null,
-                role: person.character,
-                image: person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : null,
-              }));
+          try {
+            const res = await fetch(`/api/tmdb/${tmdbType}/${tmdbId}/credits?language=en-US`);
+            if (res.ok) {
+              const tmdbCredits = await res.json();
+              if (tmdbCredits?.cast?.length > 0) {
+                return tmdbCredits.cast.map((person: { id?: number; name: string; original_name?: string; character?: string; profile_path?: string }) => ({
+                  id: person.id,
+                  name: person.name,
+                  originalName: (person.original_name && person.original_name !== person.name) ? person.original_name : null,
+                  role: person.character,
+                  image: person.profile_path ? `https://image.tmdb.org/t/p/w185${person.profile_path}` : null,
+                }));
+              }
             }
+          } catch (e) {
+            console.warn('[useMoviePeoples] Lỗi khi tải credits từ TMDB:', e);
           }
         }
 
-        // 3. Fallback: Nếu TMDB không tìm thấy, sử dụng danh sách actors có sẵn từ PhimAPI
+        // 3. Fallback: Nếu TMDB credits không có hoặc lỗi, tra cứu danh sách actors từ TMDB Search Person
         if (Array.isArray(movieMeta?.actors) && movieMeta.actors.length > 0) {
-          return movieMeta.actors.map((actorName: string) => ({
-            id: undefined,
-            name: actorName,
-            originalName: null,
-            role: 'Diễn viên',
-            image: null,
-          }));
+          const topActors = movieMeta.actors
+            .map(a => a.trim())
+            .filter(a => a && a.toLowerCase() !== 'đang cập nhật' && a !== '...')
+            .slice(0, 10);
+          const results = await Promise.all(
+            topActors.map(async (cleanName: string) => {
+              try {
+                const sRes = await fetch(`/api/tmdb/search/person?query=${encodeURIComponent(cleanName)}&language=en-US`);
+                if (sRes.ok) {
+                  const sData = await sRes.json();
+                  const match = sData?.results?.[0];
+                  if (match) {
+                    return {
+                      id: match.id,
+                      name: cleanName,
+                      originalName: match.name !== cleanName ? match.name : null,
+                      role: 'Diễn viên',
+                      image: match.profile_path ? `https://image.tmdb.org/t/p/w185${match.profile_path}` : null,
+                    };
+                  }
+                }
+              } catch {}
+              return {
+                id: undefined,
+                name: cleanName,
+                originalName: null,
+                role: 'Diễn viên',
+                image: null,
+              };
+            })
+          );
+          return results.filter(Boolean);
         }
 
         return [];
@@ -155,17 +255,18 @@ export function useMoviePeoples(
       }
     },
     enabled: !!tmdb?.id || !!movieMeta?.originName || !!movieMeta?.name || (movieMeta?.actors?.length || 0) > 0,
-    staleTime: 24 * 60 * 60 * 1000,
+    staleTime: 60 * 60 * 1000,
+    retry: 2,
   });
 }
 
 export function useMovieImages(
   slug: string,
   tmdb?: Movie['tmdb'],
-  movieMeta?: { originName?: string; name?: string }
+  movieMeta?: TmdbMatchMeta
 ) {
   return useQuery({
-    queryKey: ['movie-images-v3', slug, tmdb?.id, movieMeta?.originName, movieMeta?.name],
+    queryKey: ['movie-images-v3', slug, tmdb?.id, movieMeta?.originName, movieMeta?.name, movieMeta?.year, movieMeta?.type],
     queryFn: async () => {
       try {
         let tmdbId = tmdb?.id;
@@ -177,10 +278,10 @@ export function useMovieImages(
             const searchRes = await fetch(`/api/tmdb/search/multi?query=${encodeURIComponent(searchQuery)}&language=vi-VN`);
             if (searchRes.ok) {
               const searchData = await searchRes.json();
-              const match = searchData?.results?.find((r: any) => r.media_type === 'tv' || r.media_type === 'movie');
-              if (match) {
-                tmdbId = String(match.id);
-                tmdbType = match.media_type;
+              const strictMatch = findStrictTmdbMatch(searchData?.results, movieMeta);
+              if (strictMatch) {
+                tmdbId = strictMatch.id;
+                tmdbType = strictMatch.type;
               }
             }
           } catch {}

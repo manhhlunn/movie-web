@@ -38,6 +38,8 @@ export default function MovieDetailClient({
     originName: movie?.originName,
     name: movie?.name,
     actors: movie?.actors,
+    year: movie?.year,
+    type: movie?.type,
   });
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);

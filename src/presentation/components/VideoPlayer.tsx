@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   RefreshCw,
   ExternalLink,
+  Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
@@ -40,6 +41,74 @@ interface VideoPlayerProps {
   onNextEpisode?: () => void;
 }
 
+function isAdSegment(line: string): boolean {
+  if (!line) return false;
+  const clean = line.trim();
+  if (clean.startsWith('#')) return false;
+  // Bỏ qua các phân đoạn sửa lỗi phim của CDN (convertv8, convert...)
+  if (/convertv\d*/i.test(clean)) return false;
+
+  // 1. Phù hợp định dạng /v8/hash/segment_0001.ts hoặc /v[0-9]+/hash/segment_...
+  if (/\/v\d+\/[a-f0-9]{10,}\/segment_\d+\.ts/i.test(clean)) return true;
+  // 2. Định dạng segment_0001.ts với đường dẫn tuyệt đối
+  if (/\/segment_\d+\.ts/i.test(clean) && (clean.startsWith('/') || clean.includes('/v'))) return true;
+  // 3. Các từ khoá quảng cáo trong đường dẫn
+  if (/(\/|\b)(ads?|advert|qc|quangcao|midroll|preroll)\b/i.test(clean)) return true;
+
+  return false;
+}
+
+async function fetchAdRangesForNative(url: string): Promise<{ start: number; end: number; duration: number }[]> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const text = await res.text();
+    const lines = text.split(/\r?\n/);
+    
+    // Check if master playlist
+    const masterInf = lines.findIndex(l => l.startsWith('#EXT-X-STREAM-INF'));
+    if (masterInf !== -1) {
+      for (let i = masterInf + 1; i < lines.length; i++) {
+        const sub = lines[i].trim();
+        if (sub && !sub.startsWith('#')) {
+          const subUrl = new URL(sub, url).href;
+          return fetchAdRangesForNative(subUrl);
+        }
+      }
+      return [];
+    }
+    
+    // Media playlist: compute segment timestamps
+    let curTime = 0;
+    let curDur = 0;
+    const detected: { start: number; end: number; duration: number }[] = [];
+    let curAd: { start: number; end: number; duration: number } | null = null;
+    
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (line.startsWith('#EXTINF:')) {
+        const m = line.match(/#EXTINF:([0-9.]+)/);
+        if (m) curDur = parseFloat(m[1]);
+      } else if (line && !line.startsWith('#')) {
+        const isAd = isAdSegment(line);
+        if (isAd) {
+          if (!curAd) curAd = { start: curTime, end: curTime + curDur, duration: curDur };
+          else { curAd.end = curTime + curDur; curAd.duration += curDur; }
+        } else if (curAd) {
+          detected.push(curAd);
+          curAd = null;
+        }
+        curTime += curDur;
+        curDur = 0;
+      }
+    }
+    if (curAd) detected.push(curAd);
+    return detected;
+  } catch (e) {
+    return [];
+  }
+}
+
 export default function VideoPlayer({
   linkM3u8,
   linkEmbed,
@@ -55,9 +124,11 @@ export default function VideoPlayer({
   onNextEpisode,
 }: VideoPlayerProps) {
   const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [fallbackReason, setFallbackReason] = useState<string | null>(null);
 
   useEffect(() => {
     setUseIframeFallback(false);
+    setFallbackReason(null);
   }, [linkM3u8]);
 
   const isM3u8Valid = !useIframeFallback && !!(linkM3u8 && linkM3u8.toLowerCase().includes('.m3u8'));
@@ -77,13 +148,24 @@ export default function VideoPlayer({
         nextEpisodeUrl={nextEpisodeUrl} 
         onNextEpisode={onNextEpisode} 
         linkEmbed={linkEmbed}
-        onSwitchIframe={() => setUseIframeFallback(true)}
+        onSwitchIframe={(reason?: string) => {
+          setFallbackReason(reason || null);
+          setUseIframeFallback(true);
+        }}
       />
     );
   }
 
   if (linkEmbed) {
-    return <IframePlayer url={linkEmbed} title={title} />;
+    return (
+      <IframePlayer 
+        url={linkEmbed} 
+        title={title} 
+        isFallback={useIframeFallback}
+        fallbackReason={fallbackReason}
+        onRetryM3u8={linkM3u8 ? () => setUseIframeFallback(false) : undefined}
+      />
+    );
   }
 
   return (
@@ -122,7 +204,7 @@ function HLSPlayer({
   nextEpisodeUrl?: string;
   onNextEpisode?: () => void;
   linkEmbed?: string;
-  onSwitchIframe?: () => void;
+  onSwitchIframe?: (reason?: string) => void;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -136,6 +218,47 @@ function HLSPlayer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [slowNetworkWarning, setSlowNetworkWarning] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+
+  // Auto skip ads states
+  const [autoSkipAds, setAutoSkipAds] = useState(true);
+  const [adSkippedToast, setAdSkippedToast] = useState<string | null>(null);
+  const [adRanges, setAdRanges] = useState<{ start: number; end: number; duration: number }[]>([]);
+  const [activeAdInfo, setActiveAdInfo] = useState<{ start: number; end: number; duration: number } | null>(null);
+  const adRangesRef = useRef<{ start: number; end: number; duration: number }[]>([]);
+  const autoSkipAdsRef = useRef<boolean>(true);
+  const activeAdInfoRef = useRef<{ start: number; end: number; duration: number } | null>(null);
+  const lastSkippedTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    adRangesRef.current = adRanges;
+  }, [adRanges]);
+
+  useEffect(() => {
+    autoSkipAdsRef.current = autoSkipAds;
+  }, [autoSkipAds]);
+
+  useEffect(() => {
+    activeAdInfoRef.current = activeAdInfo;
+  }, [activeAdInfo]);
+
+  useEffect(() => {
+    const savedAutoSkip = localStorage.getItem('player-autoskip-ads');
+    if (savedAutoSkip !== null) {
+      setAutoSkipAds(savedAutoSkip === 'true');
+    }
+  }, []);
+
+  const toggleAutoSkipAds = (val: boolean) => {
+    setAutoSkipAds(val);
+    autoSkipAdsRef.current = val;
+    localStorage.setItem('player-autoskip-ads', String(val));
+    if (val && activeAdInfoRef.current && videoRef.current) {
+      videoRef.current.currentTime = activeAdInfoRef.current.end + 0.1;
+      setActiveAdInfo(null);
+      setAdSkippedToast('⚡ Đã tự động bỏ qua quảng cáo');
+      setTimeout(() => setAdSkippedToast(null), 3000);
+    }
+  };
 
   const [showControls, setShowControls] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -282,6 +405,12 @@ function HLSPlayer({
     const video = videoRef.current;
     if (!video) return;
 
+    // Thiết lập tương thích ManagedMediaSource & iOS Safari
+    try {
+      video.disableRemotePlayback = true;
+      (video as any).webkitPlaysInline = true;
+    } catch (e) {}
+
     setIsLoading(true);
     setHasError(false);
     setErrorMessage(null);
@@ -401,9 +530,24 @@ function HLSPlayer({
     video.addEventListener('playing', onCanResume);
     video.addEventListener('timeupdate', onCanResume);
 
+    const triggerFallback = (reason: string) => {
+      if (linkEmbed && onSwitchIframe) {
+        console.warn(`[VideoPlayer] Tự động chuyển sang Iframe dự phòng: ${reason}`);
+        onSwitchIframe(reason);
+        return true;
+      }
+      return false;
+    };
+
     // Network delay warning timer (8 seconds)
     const slowTimer = setTimeout(() => {
       setSlowNetworkWarning(true);
+      // Nếu là Native HLS (iOS) mà sau 8s readyState vẫn = 0, khả năng cao server CDN đã chặn hoặc treo stream
+      const v = videoRef.current;
+      if (!Hls.isSupported() && v && v.readyState === 0 && linkEmbed && onSwitchIframe) {
+        console.warn('[VideoPlayer] Native Safari HLS timeout (readyState=0 sau 8s), tự động chuyển sang Iframe');
+        triggerFallback('Kết nối stream HLS bị treo hoặc chặn trên thiết bị iOS/Safari');
+      }
     }, 8000);
 
     let hls: Hls | null = null;
@@ -412,6 +556,7 @@ function HLSPlayer({
 
     if (Hls.isSupported()) {
       hls = new Hls({
+        preferManagedMediaSource: true,
         startPosition: targetResumeRef.current > 3 ? targetResumeRef.current : -1,
         maxLoadingDelay: 4,
         maxBufferLength: 30,
@@ -432,7 +577,86 @@ function HLSPlayer({
         if (targetResumeRef.current > 3) {
           doSeek(targetResumeRef.current);
         }
-        video.play().then(() => setIsPlaying(true)).catch(() => {});
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => setIsPlaying(true))
+            .catch(() => {
+              // Trình duyệt / iOS chặn autoplay có âm thanh khi chưa tương tác
+              setIsPlaying(false);
+            });
+        }
+      });
+
+      hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+        // Tự động phát hiện các đoạn quảng cáo (nếu còn trong stream)
+        const frags = data.details?.fragments || [];
+        const detected: { start: number; end: number; duration: number }[] = [];
+        let currentAd: { start: number; end: number; duration: number } | null = null;
+
+        for (const frag of frags) {
+          const segUrl = frag.relurl || frag.url || '';
+          if (isAdSegment(segUrl)) {
+            const fStart = frag.start;
+            const fDur = frag.duration;
+            if (!currentAd) {
+              currentAd = { start: fStart, end: fStart + fDur, duration: fDur };
+            } else {
+              currentAd.end = fStart + fDur;
+              currentAd.duration += fDur;
+            }
+          } else {
+            if (currentAd) {
+              detected.push(currentAd);
+              currentAd = null;
+            }
+          }
+        }
+        if (currentAd) detected.push(currentAd);
+
+        if (detected.length > 0) {
+          const currentStr = JSON.stringify(adRangesRef.current);
+          const newStr = JSON.stringify(detected);
+          if (currentStr !== newStr) {
+            console.log('[VideoPlayer] Phát hiện khoảng quảng cáo cần bỏ qua:', detected);
+            adRangesRef.current = detected;
+            setAdRanges(detected);
+          }
+        }
+      });
+
+      hls.on(Hls.Events.FRAG_CHANGED, (_, data) => {
+        const frag = data.frag;
+        if (!frag) return;
+        const segUrl = frag.relurl || frag.url || '';
+        const isAd = isAdSegment(segUrl);
+        if (isAd) {
+          const matchedAd = adRangesRef.current.find(a => frag.start >= a.start - 1 && frag.start <= a.end) || {
+            start: frag.start,
+            end: frag.start + frag.duration,
+            duration: frag.duration,
+          };
+
+          if (autoSkipAdsRef.current) {
+            if (Date.now() - lastSkippedTimeRef.current > 2000) {
+              lastSkippedTimeRef.current = Date.now();
+              const skipTarget = matchedAd.end + 0.1;
+              console.log(`[VideoPlayer] FRAG_CHANGED: Phát hiện quảng cáo, tự động tua đến ${skipTarget.toFixed(1)}s`);
+              video.currentTime = skipTarget;
+              setAdSkippedToast(`⚡ Đã tự động bỏ qua ${Math.round(matchedAd.duration)}s quảng cáo`);
+              setTimeout(() => setAdSkippedToast(null), 3500);
+            }
+          } else {
+            setActiveAdInfo(matchedAd);
+          }
+        } else {
+          // Chỉ tắt nút Skip Ad nếu thời gian hiện tại không còn nằm trong khoảng quảng cáo nào
+          const v = videoRef.current;
+          const isInAd = v && adRangesRef.current.some(a => v.currentTime >= a.start - 0.25 && v.currentTime < a.end);
+          if (!isInAd) {
+            setActiveAdInfo(null);
+          }
+        }
       });
 
       let netRetries = 0;
@@ -446,6 +670,10 @@ function HLSPlayer({
                 hls?.startLoad();
               } else {
                 console.error('[HLS] Network error max retries reached');
+                if (triggerFallback('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS)')) {
+                  hls?.destroy();
+                  return;
+                }
                 setIsLoading(false);
                 setHasError(true);
                 setErrorMessage('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS). Vui lòng kiểm tra kết nối mạng hoặc thử nguồn khác.');
@@ -458,6 +686,10 @@ function HLSPlayer({
               break;
             default:
               console.error('[HLS] Unrecoverable error:', data);
+              if (triggerFallback('Định dạng stream m3u8 hoặc codec không hỗ trợ trên thiết bị này')) {
+                hls?.destroy();
+                return;
+              }
               setIsLoading(false);
               setHasError(true);
               setErrorMessage('Không thể phát luồng video từ nguồn này (Codec/Format Error). Vui lòng chọn server hoặc nguồn phát khác.');
@@ -469,22 +701,47 @@ function HLSPlayer({
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS
       video.src = url;
+      fetchAdRangesForNative(url).then(ranges => {
+        if (ranges.length > 0) {
+          console.log('[VideoPlayer] Native Safari: phát hiện các đoạn quảng cáo:', ranges);
+          adRangesRef.current = ranges;
+          setAdRanges(ranges);
+        }
+      });
       onNativeLoaded = () => {
         setIsLoading(false);
         setSlowNetworkWarning(false);
         if (targetResumeRef.current > 3) {
           doSeek(targetResumeRef.current);
         }
-        video.play().then(() => setIsPlaying(true)).catch(() => {});
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => setIsPlaying(true))
+            .catch(() => {
+              // iOS Safari chặn unmuted autoplay nếu chưa chạm vào màn hình
+              setIsPlaying(false);
+            });
+        }
       };
       onNativeError = () => {
         console.warn('[VideoPlayer] Native Safari HLS error:', video.error);
+        if (triggerFallback('Thiết bị iOS/Safari không thể phát trực tiếp nguồn m3u8 này (CORS hoặc định dạng không hỗ trợ)')) {
+          return;
+        }
         setIsLoading(false);
         setHasError(true);
         setErrorMessage('Thiết bị iOS/Safari không thể phát nguồn video này (CORS hoặc định dạng Audio/Video không hỗ trợ). Vui lòng chọn nguồn khác.');
       };
       video.addEventListener('loadedmetadata', onNativeLoaded);
       video.addEventListener('error', onNativeError);
+    } else {
+      if (triggerFallback('Trình duyệt không hỗ trợ chuẩn phát video HLS')) {
+        return;
+      }
+      setIsLoading(false);
+      setHasError(true);
+      setErrorMessage('Trình duyệt không hỗ trợ phát định dạng video HLS này.');
     }
 
     return () => {
@@ -511,6 +768,28 @@ function HLSPlayer({
     if (!video) return;
 
     const onTimeUpdate = () => {
+      const v = videoRef.current;
+      if (v && adRangesRef.current.length > 0) {
+        const curT = v.currentTime;
+        const currentAd = adRangesRef.current.find(ad => curT >= ad.start - 0.25 && curT < ad.end);
+        if (currentAd) {
+          if (autoSkipAdsRef.current) {
+            if (Date.now() - lastSkippedTimeRef.current > 2000) {
+              lastSkippedTimeRef.current = Date.now();
+              const skipTarget = currentAd.end + 0.1;
+              console.log(`[VideoPlayer] onTimeUpdate: Tự động bỏ qua quảng cáo từ ${currentAd.start.toFixed(1)}s -> ${currentAd.end.toFixed(1)}s`);
+              v.currentTime = skipTarget;
+              setAdSkippedToast(`⚡ Đã tự động bỏ qua ${Math.round(currentAd.duration)}s quảng cáo`);
+              setTimeout(() => setAdSkippedToast(null), 3500);
+            }
+          } else {
+            setActiveAdInfo(currentAd);
+          }
+        } else if (activeAdInfoRef.current) {
+          setActiveAdInfo(null);
+        }
+      }
+
       if (pendingSeekTimeRef.current === null) {
         setCurrentTime(video.currentTime);
         if (!isDraggingRef.current) {
@@ -1042,14 +1321,20 @@ function HLSPlayer({
           ref={videoRef}
           className="absolute inset-0 w-full h-full object-contain"
           onClick={handleVideoClick}
-        playsInline
-        poster={poster}
-        onLoadedData={(e) => { 
-          e.currentTarget.playbackRate = playbackRate; 
-          e.currentTarget.volume = volume;
-          e.currentTarget.muted = isMuted;
-        }}
-      />
+          playsInline
+          {...{
+            'webkit-playsinline': 'true',
+            'x-webkit-airplay': 'deny',
+          }}
+          disableRemotePlayback
+          preload="metadata"
+          poster={poster}
+          onLoadedData={(e) => { 
+            e.currentTarget.playbackRate = playbackRate; 
+            e.currentTarget.volume = volume;
+            e.currentTarget.muted = isMuted;
+          }}
+        />
 
       {/* Loading spinner with Network Warning */}
       {isLoading && !hasError && (
@@ -1147,6 +1432,30 @@ function HLSPlayer({
                 />
                 <p className="text-[10px] sm:text-xs text-zinc-500 mt-1">Sử dụng khi nhấp đúp hoặc bấm nút tua.</p>
               </div>
+
+              <div className="pt-2 border-t border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs sm:text-sm text-zinc-300 font-medium">Tự động bỏ qua quảng cáo</label>
+                    <p className="text-[10px] sm:text-xs text-zinc-500">Tự động tua qua khi phát hiện đoạn quảng cáo chèn</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleAutoSkipAds(!autoSkipAds)}
+                    className={cn(
+                      "w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer",
+                      autoSkipAds ? "bg-red-600" : "bg-zinc-700"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "bg-white w-4 h-4 rounded-full shadow-md transform transition-transform",
+                        autoSkipAds ? "translate-x-5" : "translate-x-0"
+                      )}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-3 justify-end flex-shrink-0 border-t border-zinc-800 pt-3">
@@ -1160,6 +1469,14 @@ function HLSPlayer({
               >Lưu</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast thông báo đã tự động bỏ qua quảng cáo */}
+      {adSkippedToast && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-zinc-900/95 border border-yellow-500/40 text-yellow-300 px-4 py-2 rounded-full font-medium text-xs sm:text-sm shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-300 pointer-events-none">
+          <Zap className="w-4 h-4 fill-current text-yellow-400 animate-pulse" />
+          <span>{adSkippedToast}</span>
         </div>
       )}
 
@@ -1199,8 +1516,29 @@ function HLSPlayer({
         </div>
       )}
 
-      {/* Smart Action Buttons (Skip Intro & Next Episode) */}
+      {/* Smart Action Buttons (Skip Intro & Next Episode & Skip Ad) */}
       <div className="absolute bottom-24 right-4 sm:right-6 flex flex-col gap-3 items-end z-20 pointer-events-none">
+        {/* Nút bỏ qua quảng cáo khi user không bật autoSkip */}
+        {activeAdInfo && !autoSkipAds && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (videoRef.current) {
+                videoRef.current.currentTime = activeAdInfo.end + 0.1;
+                setActiveAdInfo(null);
+                setAdSkippedToast('⚡ Đã bỏ qua quảng cáo');
+                setTimeout(() => setAdSkippedToast(null), 2500);
+              }
+            }}
+            className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-zinc-950 font-bold px-4 py-2.5 rounded-xl shadow-2xl transition-all hover:scale-105 active:scale-95 border-2 border-yellow-200 pointer-events-auto flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-300 cursor-pointer"
+          >
+            <FastForward className="w-4 h-4 fill-current" />
+            <span>Bỏ qua quảng cáo</span>
+            <span className="bg-black/20 text-xs px-1.5 py-0.5 rounded font-mono">
+              {Math.max(0, Math.ceil(activeAdInfo.end - currentTime))}s
+            </span>
+          </button>
+        )}
         {showSkipIntro && (
           <button
             onClick={(e) => { e.stopPropagation(); handleSkipIntro(); }}
@@ -1250,15 +1588,28 @@ function HLSPlayer({
 
           <div
             ref={progressBarRef}
-            className="w-full h-1.5 bg-zinc-700 rounded-full cursor-pointer mb-3 group/progress hover:h-2.5 transition-all touch-none"
+            className="w-full h-1.5 bg-zinc-700 rounded-full cursor-pointer mb-3 group/progress hover:h-2.5 transition-all touch-none relative overflow-hidden"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerLeave}
             onPointerCancel={handlePointerCancel}
           >
+            {/* Ad markers on progress bar */}
+            {duration > 0 && adRanges.map((ad, idx) => {
+              const leftPct = (ad.start / duration) * 100;
+              const widthPct = Math.max((ad.duration / duration) * 100, 0.6);
+              return (
+                <div 
+                  key={idx}
+                  className="absolute top-0 bottom-0 bg-yellow-400/90 rounded-full pointer-events-none z-10"
+                  style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                  title={`Quảng cáo (${Math.round(ad.duration)}s - Tự động bỏ qua)`}
+                />
+              );
+            })}
             <div
-              className="h-full bg-red-600 rounded-full relative transition-all"
+              className="h-full bg-red-600 rounded-full relative transition-all z-20"
               style={{ width: `${progress}%` }}
             >
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-red-500 rounded-full shadow-lg opacity-0 group-hover/progress:opacity-100 transition-opacity" />
@@ -1389,7 +1740,19 @@ function VideoPreview({ url, time }: { url: string; time: number }) {
 
 // ─── Iframe Player ───────────────────────────────────────────
 
-function IframePlayer({ url, title }: { url: string; title?: string }) {
+function IframePlayer({ 
+  url, 
+  title, 
+  isFallback,
+  fallbackReason,
+  onRetryM3u8,
+}: { 
+  url: string; 
+  title?: string;
+  isFallback?: boolean;
+  fallbackReason?: string | null;
+  onRetryM3u8?: () => void;
+}) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -1412,8 +1775,29 @@ function IframePlayer({ url, title }: { url: string; title?: string }) {
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         referrerPolicy="no-referrer-when-downgrade"
       />
-      <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 pointer-events-auto">
-        <span className="font-medium text-zinc-400">Nguồn Iframe</span>
+      {/* Thông báo khi tự động chuyển sang Iframe dự phòng */}
+      {isFallback && (
+        <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-yellow-500/40 text-xs text-yellow-300 shadow-xl pointer-events-auto">
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+          </span>
+          <span className="font-medium">Đang phát qua Iframe (Dự phòng iOS / Safari)</span>
+          {onRetryM3u8 && (
+            <button
+              onClick={onRetryM3u8}
+              className="ml-2 px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-all text-[11px] font-medium border border-zinc-700 cursor-pointer"
+              title="Thử lại kết nối luồng trực tiếp HLS"
+            >
+              Thử lại HLS
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Nút mở tab mới (luôn hiện mờ trên mobile, hiện rõ khi hover trên desktop) */}
+      <div className="absolute top-3 right-3 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 pointer-events-auto">
+        <span className="font-medium text-zinc-400 hidden xs:inline">Nguồn Iframe</span>
         <a
           href={url}
           target="_blank"
