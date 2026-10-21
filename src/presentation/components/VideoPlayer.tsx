@@ -19,6 +19,7 @@ import {
   RefreshCw,
   ExternalLink,
   Zap,
+  Tv,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
@@ -39,6 +40,14 @@ interface VideoPlayerProps {
   movie?: any;
   nextEpisodeUrl?: string;
   onNextEpisode?: () => void;
+}
+
+function isIOSDevice(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
 }
 
 function isAdSegment(line: string): boolean {
@@ -126,10 +135,44 @@ export default function VideoPlayer({
   const [useIframeFallback, setUseIframeFallback] = useState(false);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
 
+  // Khôi phục tùy chọn nguồn phát ưa thích nếu người dùng từng chuyển sang Iframe
   useEffect(() => {
-    setUseIframeFallback(false);
-    setFallbackReason(null);
+    try {
+      const savedMode = localStorage.getItem('player-preferred-mode');
+      if (savedMode === 'iframe' && linkEmbed) {
+        setUseIframeFallback(true);
+      }
+    } catch (e) {}
+  }, [linkEmbed]);
+
+  useEffect(() => {
+    try {
+      const savedMode = localStorage.getItem('player-preferred-mode');
+      if (savedMode !== 'iframe') {
+        setUseIframeFallback(false);
+        setFallbackReason(null);
+      }
+    } catch (e) {
+      setUseIframeFallback(false);
+      setFallbackReason(null);
+    }
   }, [linkM3u8]);
+
+  const handleSwitchToIframe = (reason?: string) => {
+    setFallbackReason(reason || null);
+    setUseIframeFallback(true);
+    try {
+      localStorage.setItem('player-preferred-mode', 'iframe');
+    } catch (e) {}
+  };
+
+  const handleSwitchToHLS = () => {
+    setFallbackReason(null);
+    setUseIframeFallback(false);
+    try {
+      localStorage.setItem('player-preferred-mode', 'hls');
+    } catch (e) {}
+  };
 
   const isM3u8Valid = !useIframeFallback && !!(linkM3u8 && linkM3u8.toLowerCase().includes('.m3u8'));
 
@@ -148,10 +191,7 @@ export default function VideoPlayer({
         nextEpisodeUrl={nextEpisodeUrl} 
         onNextEpisode={onNextEpisode} 
         linkEmbed={linkEmbed}
-        onSwitchIframe={(reason?: string) => {
-          setFallbackReason(reason || null);
-          setUseIframeFallback(true);
-        }}
+        onSwitchIframe={handleSwitchToIframe}
       />
     );
   }
@@ -163,7 +203,7 @@ export default function VideoPlayer({
         title={title} 
         isFallback={useIframeFallback}
         fallbackReason={fallbackReason}
-        onRetryM3u8={linkM3u8 ? () => setUseIframeFallback(false) : undefined}
+        onRetryM3u8={linkM3u8 ? handleSwitchToHLS : undefined}
       />
     );
   }
@@ -539,24 +579,27 @@ function HLSPlayer({
       return false;
     };
 
-    // Network delay warning timer (8 seconds)
+    // Network delay warning timer (5 seconds)
     const slowTimer = setTimeout(() => {
       setSlowNetworkWarning(true);
-      // Nếu là Native HLS (iOS) mà sau 8s readyState vẫn = 0, khả năng cao server CDN đã chặn hoặc treo stream
+      // Nếu video chưa sẵn sàng sau 5s (readyState <= 1 hoặc bị chặn trên iOS/Safari) và có linkEmbed
       const v = videoRef.current;
-      if (!Hls.isSupported() && v && v.readyState === 0 && linkEmbed && onSwitchIframe) {
-        console.warn('[VideoPlayer] Native Safari HLS timeout (readyState=0 sau 8s), tự động chuyển sang Iframe');
-        triggerFallback('Kết nối stream HLS bị treo hoặc chặn trên thiết bị iOS/Safari');
+      if (v && v.readyState <= 1 && linkEmbed && onSwitchIframe) {
+        console.warn('[VideoPlayer] HLS stream không phản hồi sau 5s trên thiết bị, tự động chuyển sang Iframe');
+        triggerFallback('Kết nối stream HLS bị treo hoặc không được thiết bị iOS/Safari hỗ trợ');
       }
-    }, 8000);
+    }, 5000);
 
     let hls: Hls | null = null;
     let onNativeLoaded: (() => void) | null = null;
     let onNativeError: (() => void) | null = null;
 
-    if (Hls.isSupported()) {
+    const isIOS = isIOSDevice();
+    const useNativeHLS = isIOS && video.canPlayType('application/vnd.apple.mpegurl');
+
+    if (!useNativeHLS && Hls.isSupported()) {
       hls = new Hls({
-        preferManagedMediaSource: true,
+        preferManagedMediaSource: false, // Tắt ManagedMediaSource để tránh lỗi MSE trên Safari
         startPosition: targetResumeRef.current > 3 ? targetResumeRef.current : -1,
         maxLoadingDelay: 4,
         maxBufferLength: 30,
@@ -701,6 +744,7 @@ function HLSPlayer({
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari native HLS
       video.src = url;
+      video.load();
       fetchAdRangesForNative(url).then(ranges => {
         if (ranges.length > 0) {
           console.log('[VideoPlayer] Native Safari: phát hiện các đoạn quảng cáo:', ranges);
@@ -734,6 +778,7 @@ function HLSPlayer({
         setErrorMessage('Thiết bị iOS/Safari không thể phát nguồn video này (CORS hoặc định dạng Audio/Video không hỗ trợ). Vui lòng chọn nguồn khác.');
       };
       video.addEventListener('loadedmetadata', onNativeLoaded);
+      video.addEventListener('canplay', onNativeLoaded);
       video.addEventListener('error', onNativeError);
     } else {
       if (triggerFallback('Trình duyệt không hỗ trợ chuẩn phát video HLS')) {
@@ -1277,10 +1322,30 @@ function HLSPlayer({
         {/* Top Controls */}
         <div
           className={cn(
-            "absolute top-0 left-0 right-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pb-16 pt-4 px-4 transition-opacity duration-300 flex items-center justify-end z-20 gap-3",
-            showControls || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+            "absolute top-0 left-0 right-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pb-16 pt-3 sm:pt-4 px-3 sm:px-4 transition-opacity duration-300 flex items-center justify-between z-20 gap-2",
+            showControls || !isPlaying || isLoading ? "opacity-100" : "opacity-0 pointer-events-none"
           )}
         >
+          {/* Top Left: Nút chuyển sang Iframe luôn hiển thị khi có linkEmbed */}
+          <div className="flex items-center gap-2 pointer-events-auto">
+            {linkEmbed && onSwitchIframe && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSwitchIframe('Người dùng chủ động chuyển sang Iframe');
+                }}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 bg-black/75 hover:bg-zinc-800 text-yellow-300 hover:text-yellow-200 border border-yellow-500/50 hover:border-yellow-400 rounded-lg text-[11px] sm:text-xs font-semibold shadow-lg backdrop-blur-md transition-all active:scale-95 cursor-pointer"
+                title="Bấm để chuyển sang nguồn phát Iframe (Dự phòng cho iOS / Safari)"
+              >
+                <Tv className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                <span className="whitespace-nowrap">Đổi sang Iframe</span>
+              </button>
+            )}
+          </div>
+
+          {/* Top Right: Tốc độ & Cài đặt */}
+          <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
           {/* Speed Menu */}
           <div className="relative">
             {showSpeedMenu && (
@@ -1315,6 +1380,7 @@ function HLSPlayer({
           >
             <Settings className="w-5 h-5" />
           </button>
+          </div>
         </div>
 
         <video
@@ -1339,8 +1405,8 @@ function HLSPlayer({
       {/* Loading spinner with Network Warning */}
       {isLoading && !hasError && (
         <div className={cn(
-          "absolute inset-0 flex flex-col items-center justify-center z-30 p-4 text-center pointer-events-none transition-all duration-200",
-          currentTime > 0 ? "bg-black/20" : "bg-black/60 backdrop-blur-sm"
+          "absolute inset-0 flex flex-col items-center justify-center z-30 p-4 text-center transition-all duration-200",
+          currentTime > 0 ? "bg-black/20 pointer-events-none" : "bg-black/75 backdrop-blur-sm pointer-events-auto"
         )}>
           <Loader2 className="w-10 h-10 text-red-600 animate-spin mb-3" />
           {currentTime === 0 && (
@@ -1350,6 +1416,19 @@ function HLSPlayer({
             <div className="mt-3 bg-zinc-900/95 border border-yellow-500/30 rounded-lg px-3 py-2 text-xs text-yellow-400 max-w-sm animate-pulse shadow-lg">
               ⚠️ Mạng đang chậm hoặc server phản hồi lâu. Bạn có thể thử chọn nguồn phát khác phía trên.
             </div>
+          )}
+          {linkEmbed && onSwitchIframe && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSwitchIframe('Người dùng chuyển sang Iframe khi đang tải');
+              }}
+              className="mt-4 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-zinc-950 font-bold rounded-xl text-xs sm:text-sm shadow-2xl transition-all active:scale-95 cursor-pointer pointer-events-auto border border-yellow-200"
+            >
+              <Tv className="w-4 h-4 fill-current shrink-0" />
+              <span>Không phát được trên iOS? Bấm dùng Iframe</span>
+            </button>
           )}
         </div>
       )}
@@ -1456,6 +1535,25 @@ function HLSPlayer({
                   </button>
                 </div>
               </div>
+
+              {linkEmbed && onSwitchIframe && (
+                <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs sm:text-sm text-zinc-300 font-medium">Nguồn phát Iframe</label>
+                    <p className="text-[10px] sm:text-xs text-zinc-500">Dự phòng khi iOS/Safari không phát được HLS</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSettingsModal(false);
+                      onSwitchIframe('Chuyển từ Cài đặt');
+                    }}
+                    className="px-2.5 py-1 bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 border border-yellow-500/40 rounded text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Dùng Iframe
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 justify-end flex-shrink-0 border-t border-zinc-800 pt-3">
@@ -1775,25 +1873,28 @@ function IframePlayer({
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         referrerPolicy="no-referrer-when-downgrade"
       />
-      {/* Thông báo khi tự động chuyển sang Iframe dự phòng */}
-      {isFallback && (
-        <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-yellow-500/40 text-xs text-yellow-300 shadow-xl pointer-events-auto">
+      {/* Top Bar của Iframe Player: Luôn hiện badge nguồn & nút chuyển về HLS nếu có */}
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-2 pointer-events-auto">
+        <div className="flex items-center gap-1.5 bg-black/80 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-yellow-500/40 text-xs text-yellow-300 shadow-xl">
           <span className="flex h-2 w-2 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
           </span>
-          <span className="font-medium">Đang phát qua Iframe (Dự phòng iOS / Safari)</span>
-          {onRetryM3u8 && (
-            <button
-              onClick={onRetryM3u8}
-              className="ml-2 px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-all text-[11px] font-medium border border-zinc-700 cursor-pointer"
-              title="Thử lại kết nối luồng trực tiếp HLS"
-            >
-              Thử lại HLS
-            </button>
-          )}
+          <span className="font-medium text-[11px] sm:text-xs">Nguồn Iframe (Dự phòng)</span>
         </div>
-      )}
+
+        {onRetryM3u8 && (
+          <button
+            type="button"
+            onClick={onRetryM3u8}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/80 hover:bg-zinc-800 text-zinc-200 hover:text-white border border-zinc-700 hover:border-zinc-500 text-[11px] sm:text-xs font-semibold shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
+            title="Thử lại kết nối luồng trực tiếp HLS"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-red-500 shrink-0" />
+            <span>Đổi về HLS</span>
+          </button>
+        )}
+      </div>
 
       {/* Nút mở tab mới (luôn hiện mờ trên mobile, hiện rõ khi hover trên desktop) */}
       <div className="absolute top-3 right-3 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 pointer-events-auto">
