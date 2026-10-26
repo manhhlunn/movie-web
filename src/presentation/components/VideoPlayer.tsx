@@ -135,43 +135,24 @@ export default function VideoPlayer({
   const [useIframeFallback, setUseIframeFallback] = useState(false);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
 
-  // Khôi phục tùy chọn nguồn phát ưa thích nếu người dùng từng chuyển sang Iframe
+  // Xóa trạng thái kẹt Iframe cũ trong localStorage (nếu có) và luôn mặc định phát HLS khi đổi tập/nguồn
+  // Chỉ cho phép chuyển sang Iframe khi người dùng chủ động bấm nút
   useEffect(() => {
     try {
-      const savedMode = localStorage.getItem('player-preferred-mode');
-      if (savedMode === 'iframe' && linkEmbed) {
-        setUseIframeFallback(true);
-      }
+      localStorage.removeItem('player-preferred-mode');
     } catch (e) {}
-  }, [linkEmbed]);
-
-  useEffect(() => {
-    try {
-      const savedMode = localStorage.getItem('player-preferred-mode');
-      if (savedMode !== 'iframe') {
-        setUseIframeFallback(false);
-        setFallbackReason(null);
-      }
-    } catch (e) {
-      setUseIframeFallback(false);
-      setFallbackReason(null);
-    }
-  }, [linkM3u8]);
+    setUseIframeFallback(false);
+    setFallbackReason(null);
+  }, [linkM3u8, episodeSlug]);
 
   const handleSwitchToIframe = (reason?: string) => {
     setFallbackReason(reason || null);
     setUseIframeFallback(true);
-    try {
-      localStorage.setItem('player-preferred-mode', 'iframe');
-    } catch (e) {}
   };
 
   const handleSwitchToHLS = () => {
     setFallbackReason(null);
     setUseIframeFallback(false);
-    try {
-      localStorage.setItem('player-preferred-mode', 'hls');
-    } catch (e) {}
   };
 
   const isM3u8Valid = !useIframeFallback && !!(linkM3u8 && linkM3u8.toLowerCase().includes('.m3u8'));
@@ -318,10 +299,16 @@ function HLSPlayer({
 
   const [hoverPos, setHoverPos] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number>(0);
+  const [hasActivatedPreview, setHasActivatedPreview] = useState(false);
+  const previewHoverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Speed and PiP states
+  // Speed, Quality and PiP states
+  const hlsRef = useRef<Hls | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>([]);
+  const [currentQuality, setCurrentQuality] = useState<number>(-1);
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
   const [isPiPSupported, setIsPiPSupported] = useState(false);
   
   // Custom intro/outro settings per movie
@@ -445,9 +432,12 @@ function HLSPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    // Thiết lập tương thích ManagedMediaSource & iOS Safari
+    // Thiết lập tương thích iOS Safari & MSE
+    const isIOS = isIOSDevice();
     try {
-      video.disableRemotePlayback = true;
+      if (!isIOS) {
+        video.disableRemotePlayback = true;
+      }
       (video as any).webkitPlaysInline = true;
     } catch (e) {}
 
@@ -455,6 +445,14 @@ function HLSPlayer({
     setHasError(false);
     setErrorMessage(null);
     setSlowNetworkWarning(false);
+    setHasActivatedPreview(false);
+    setQualityLevels([]);
+    setCurrentQuality(-1);
+    setShowQualityMenu(false);
+    if (previewHoverTimerRef.current) {
+      clearTimeout(previewHoverTimerRef.current);
+      previewHoverTimerRef.current = null;
+    }
 
     // Quản lý thời điểm tua tiếp tục xem phim (Resume)
     targetResumeRef.current = 0;
@@ -570,31 +568,15 @@ function HLSPlayer({
     video.addEventListener('playing', onCanResume);
     video.addEventListener('timeupdate', onCanResume);
 
-    const triggerFallback = (reason: string) => {
-      if (linkEmbed && onSwitchIframe) {
-        console.warn(`[VideoPlayer] Tự động chuyển sang Iframe dự phòng: ${reason}`);
-        onSwitchIframe(reason);
-        return true;
-      }
-      return false;
-    };
-
-    // Network delay warning timer (5 seconds)
+    // Network delay warning timer (5 seconds) — chỉ cảnh báo, KHÔNG tự động ép chuyển sang Iframe
     const slowTimer = setTimeout(() => {
       setSlowNetworkWarning(true);
-      // Nếu video chưa sẵn sàng sau 5s (readyState <= 1 hoặc bị chặn trên iOS/Safari) và có linkEmbed
-      const v = videoRef.current;
-      if (v && v.readyState <= 1 && linkEmbed && onSwitchIframe) {
-        console.warn('[VideoPlayer] HLS stream không phản hồi sau 5s trên thiết bị, tự động chuyển sang Iframe');
-        triggerFallback('Kết nối stream HLS bị treo hoặc không được thiết bị iOS/Safari hỗ trợ');
-      }
     }, 5000);
 
     let hls: Hls | null = null;
     let onNativeLoaded: (() => void) | null = null;
     let onNativeError: (() => void) | null = null;
 
-    const isIOS = isIOSDevice();
     const useNativeHLS = isIOS && video.canPlayType('application/vnd.apple.mpegurl');
 
     if (!useNativeHLS && Hls.isSupported()) {
@@ -612,11 +594,27 @@ function HLSPlayer({
         lowLatencyMode: false,
         maxBufferHole: 0.5,
       });
+      hlsRef.current = hls;
       hls.loadSource(url);
       hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
         setIsLoading(false);
         setSlowNetworkWarning(false);
+
+        // Lấy danh sách độ phân giải nếu Master Playlist có nhiều mức chất lượng
+        if (data?.levels && data.levels.length > 1) {
+          const seenHeights = new Set<number>();
+          const levels: { index: number; height: number }[] = [];
+          data.levels.forEach((lvl, idx) => {
+            if (lvl.height && lvl.height > 0 && !seenHeights.has(lvl.height)) {
+              seenHeights.add(lvl.height);
+              levels.push({ index: idx, height: lvl.height });
+            }
+          });
+          levels.sort((a, b) => b.height - a.height);
+          setQualityLevels(levels);
+        }
+
         if (targetResumeRef.current > 3) {
           doSeek(targetResumeRef.current);
         }
@@ -703,6 +701,7 @@ function HLSPlayer({
       });
 
       let netRetries = 0;
+      let triedStreamFilterProxy = false;
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
           switch (data.type) {
@@ -711,15 +710,16 @@ function HLSPlayer({
               if (netRetries <= 2) {
                 console.warn(`[HLS] Network error retry ${netRetries}/2...`);
                 hls?.startLoad();
+              } else if (!triedStreamFilterProxy && !url.includes('/api/stream-filter')) {
+                triedStreamFilterProxy = true;
+                console.warn('[HLS] Thử kết nối qua proxy /api/stream-filter để vượt lỗi CORS/Ad segment...');
+                hls?.loadSource(`/api/stream-filter?url=${encodeURIComponent(url)}`);
+                hls?.startLoad();
               } else {
                 console.error('[HLS] Network error max retries reached');
-                if (triggerFallback('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS)')) {
-                  hls?.destroy();
-                  return;
-                }
                 setIsLoading(false);
                 setHasError(true);
-                setErrorMessage('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS). Vui lòng kiểm tra kết nối mạng hoặc thử nguồn khác.');
+                setErrorMessage('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS). Bạn có thể bấm "Thử tải lại" hoặc chuyển sang nguồn phát khác.');
                 hls?.destroy();
               }
               break;
@@ -729,20 +729,19 @@ function HLSPlayer({
               break;
             default:
               console.error('[HLS] Unrecoverable error:', data);
-              if (triggerFallback('Định dạng stream m3u8 hoặc codec không hỗ trợ trên thiết bị này')) {
-                hls?.destroy();
-                return;
-              }
               setIsLoading(false);
               setHasError(true);
-              setErrorMessage('Không thể phát luồng video từ nguồn này (Codec/Format Error). Vui lòng chọn server hoặc nguồn phát khác.');
+              setErrorMessage('Không thể phát luồng video từ nguồn này (Codec/Format Error). Bạn có thể chọn server khác hoặc bấm "Dùng Iframe Dự Phòng".');
               hls?.destroy();
               break;
           }
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS
+      // Safari / iOS native HLS
+      let nativeLoadedHandled = false;
+      let nativeProxyRetried = false;
+
       video.src = url;
       video.load();
       fetchAdRangesForNative(url).then(ranges => {
@@ -752,7 +751,16 @@ function HLSPlayer({
           setAdRanges(ranges);
         }
       });
+
       onNativeLoaded = () => {
+        if (nativeLoadedHandled) return;
+        nativeLoadedHandled = true;
+        if (onNativeLoaded) {
+          video.removeEventListener('loadedmetadata', onNativeLoaded);
+          video.removeEventListener('loadeddata', onNativeLoaded);
+          video.removeEventListener('canplay', onNativeLoaded);
+        }
+
         setIsLoading(false);
         setSlowNetworkWarning(false);
         if (targetResumeRef.current > 3) {
@@ -763,27 +771,62 @@ function HLSPlayer({
           playPromise
             .then(() => setIsPlaying(true))
             .catch(() => {
-              // iOS Safari chặn unmuted autoplay nếu chưa chạm vào màn hình
+              // iOS Safari chặn unmuted autoplay: phải tắt isLoading ngay để hiện nút Play cho người dùng bấm!
+              setIsLoading(false);
               setIsPlaying(false);
             });
         }
       };
+
       onNativeError = () => {
-        console.warn('[VideoPlayer] Native Safari HLS error:', video.error);
-        if (triggerFallback('Thiết bị iOS/Safari không thể phát trực tiếp nguồn m3u8 này (CORS hoặc định dạng không hỗ trợ)')) {
+        if (!nativeProxyRetried && !url.includes('/api/stream-filter')) {
+          nativeProxyRetried = true;
+          nativeLoadedHandled = false;
+          console.warn('[VideoPlayer] Native Safari HLS lỗi trực tiếp, thử qua proxy /api/stream-filter...');
+          video.src = `/api/stream-filter?url=${encodeURIComponent(url)}`;
+          video.load();
+          const p = video.play();
+          if (p !== undefined) {
+            p.then(() => {
+              setIsLoading(false);
+              setIsPlaying(true);
+            }).catch(() => {
+              setIsLoading(false);
+              setIsPlaying(false);
+            });
+          }
           return;
         }
+        console.warn('[VideoPlayer] Native Safari HLS error:', video.error);
         setIsLoading(false);
         setHasError(true);
-        setErrorMessage('Thiết bị iOS/Safari không thể phát nguồn video này (CORS hoặc định dạng Audio/Video không hỗ trợ). Vui lòng chọn nguồn khác.');
+        setErrorMessage('Thiết bị iOS/Safari không thể phát trực tiếp nguồn video này (CORS hoặc định dạng không hỗ trợ). Vui lòng chọn nguồn khác hoặc bấm "Dùng Iframe Dự Phòng".');
       };
+
       video.addEventListener('loadedmetadata', onNativeLoaded);
+      video.addEventListener('loadeddata', onNativeLoaded);
       video.addEventListener('canplay', onNativeLoaded);
       video.addEventListener('error', onNativeError);
-    } else {
-      if (triggerFallback('Trình duyệt không hỗ trợ chuẩn phát video HLS')) {
-        return;
+
+      // QUAN TRỌNG TRÊN iOS SAFARI:
+      // Gọi video.play() ngay để kích hoạt iOS tải manifest .m3u8.
+      // Nếu iOS chặn Autoplay có tiếng (reject promise), tắt ngay isLoading để hiện nút Play lớn ở giữa màn hình
+      // thay vì treo ở màn hình Loading chờ loadedmetadata (Deadlock).
+      const initialPlayPromise = video.play();
+      if (initialPlayPromise !== undefined) {
+        initialPlayPromise
+          .then(() => {
+            setIsLoading(false);
+            setSlowNetworkWarning(false);
+            setIsPlaying(true);
+          })
+          .catch(() => {
+            // Autoplay bị iOS chặn -> mở khóa giao diện ngay để người dùng chạm nút Play
+            setIsLoading(false);
+            setIsPlaying(false);
+          });
       }
+    } else {
       setIsLoading(false);
       setHasError(true);
       setErrorMessage('Trình duyệt không hỗ trợ phát định dạng video HLS này.');
@@ -792,6 +835,11 @@ function HLSPlayer({
     return () => {
       clearTimeout(slowTimer);
       clearTimeout(historyFetchTimeout);
+      if (previewHoverTimerRef.current) {
+        clearTimeout(previewHoverTimerRef.current);
+        previewHoverTimerRef.current = null;
+      }
+      hlsRef.current = null;
       hls?.destroy();
       if (video) {
         video.removeEventListener('loadedmetadata', onCanResume);
@@ -799,8 +847,14 @@ function HLSPlayer({
         video.removeEventListener('canplay', onCanResume);
         video.removeEventListener('playing', onCanResume);
         video.removeEventListener('timeupdate', onCanResume);
-        if (onNativeLoaded) video.removeEventListener('loadedmetadata', onNativeLoaded);
-        if (onNativeError) video.removeEventListener('error', onNativeError);
+        if (onNativeLoaded) {
+          video.removeEventListener('loadedmetadata', onNativeLoaded);
+          video.removeEventListener('loadeddata', onNativeLoaded);
+          video.removeEventListener('canplay', onNativeLoaded);
+        }
+        if (onNativeError) {
+          video.removeEventListener('error', onNativeError);
+        }
         video.pause();
         video.removeAttribute('src');
         video.load();
@@ -847,11 +901,19 @@ function HLSPlayer({
     let waitTimer: NodeJS.Timeout | null = null;
     const onWaiting = () => {
       if (waitTimer) clearTimeout(waitTimer);
+      // Không bật isLoading nếu video đang paused (ví dụ iOS Safari từ chối unmuted autoplay)
+      if (video.paused) return;
       waitTimer = setTimeout(() => {
-        setIsLoading(true);
+        if (!video.paused) {
+          setIsLoading(true);
+        }
       }, 250);
     };
     const onCanPlay = () => {
+      if (waitTimer) clearTimeout(waitTimer);
+      setIsLoading(false);
+    };
+    const onPauseClearWait = () => {
       if (waitTimer) clearTimeout(waitTimer);
       setIsLoading(false);
     };
@@ -867,6 +929,7 @@ function HLSPlayer({
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('playing', onCanPlay);
     video.addEventListener('seeked', onCanPlay);
+    video.addEventListener('pause', onPauseClearWait);
     video.addEventListener('ended', onEnded);
 
     return () => {
@@ -877,6 +940,7 @@ function HLSPlayer({
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('playing', onCanPlay);
       video.removeEventListener('seeked', onCanPlay);
+      video.removeEventListener('pause', onPauseClearWait);
       video.removeEventListener('ended', onEnded);
     };
   }, []);
@@ -979,11 +1043,24 @@ function HLSPlayer({
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play();
-      setIsPlaying(true);
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+            setIsLoading(false);
+          })
+          .catch(() => {
+            setIsPlaying(false);
+            setIsLoading(false);
+          });
+      } else {
+        setIsPlaying(true);
+      }
     } else {
       video.pause();
       setIsPlaying(false);
+      setIsLoading(false);
     }
   };
 
@@ -1036,11 +1113,8 @@ function HLSPlayer({
       const target = pendingSeekTimeRef.current;
       pendingSeekTimeRef.current = null;
       if (video && target !== null) {
-        if (typeof (video as any).fastSeek === 'function') {
-          (video as any).fastSeek(target);
-        } else {
-          video.currentTime = target;
-        }
+        // Gán trực tiếp currentTime thay vì fastSeek để tránh nhảy lệch về keyframe cũ khi tua ngắn (5s-10s)
+        video.currentTime = target;
       }
     }, 180);
   };
@@ -1067,6 +1141,14 @@ function HLSPlayer({
       video.playbackRate = speed;
       setPlaybackRate(speed);
       setShowSpeedMenu(false);
+    }
+  };
+
+  const changeQuality = (levelIndex: number) => {
+    if (hlsRef.current) {
+      hlsRef.current.currentLevel = levelIndex;
+      setCurrentQuality(levelIndex);
+      setShowQualityMenu(false);
     }
   };
 
@@ -1161,19 +1243,41 @@ function HLSPlayer({
     const pos = calculateProgress(e.clientX, e.clientY);
     setHoverPos(pos);
     setHoverTime(pos * duration);
-    
+
+    // Chỉ khởi tạo VideoPreview trên Desktop khi chuột giữ trên thanh tua >= 150ms
+    if (
+      !hasActivatedPreview &&
+      e.pointerType === 'mouse' &&
+      typeof window !== 'undefined' &&
+      window.innerWidth >= 768 &&
+      !previewHoverTimerRef.current
+    ) {
+      previewHoverTimerRef.current = setTimeout(() => {
+        setHasActivatedPreview(true);
+        previewHoverTimerRef.current = null;
+      }, 150);
+    }
+
     if (isDraggingRef.current) {
       setProgress(pos * 100);
     }
   };
 
   const handlePointerLeave = () => {
+    if (previewHoverTimerRef.current) {
+      clearTimeout(previewHoverTimerRef.current);
+      previewHoverTimerRef.current = null;
+    }
     if (!isDraggingRef.current) {
       setHoverPos(null);
     }
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (previewHoverTimerRef.current) {
+      clearTimeout(previewHoverTimerRef.current);
+      previewHoverTimerRef.current = null;
+    }
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
       try {
@@ -1188,6 +1292,10 @@ function HLSPlayer({
   };
 
   const handlePointerCancel = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (previewHoverTimerRef.current) {
+      clearTimeout(previewHoverTimerRef.current);
+      previewHoverTimerRef.current = null;
+    }
     isDraggingRef.current = false;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -1198,8 +1306,9 @@ function HLSPlayer({
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
-    if (showSpeedMenu) {
+    if (showSpeedMenu || showQualityMenu) {
       setShowSpeedMenu(false);
+      setShowQualityMenu(false);
       return;
     }
 
@@ -1344,8 +1453,52 @@ function HLSPlayer({
             )}
           </div>
 
-          {/* Top Right: Tốc độ & Cài đặt */}
+          {/* Top Right: Chất lượng, Tốc độ & Cài đặt */}
           <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+          {/* Quality Menu */}
+          {qualityLevels.length > 1 && (
+            <div className="relative">
+              {showQualityMenu && (
+                <div className="absolute top-full right-0 mt-2 bg-black/90 backdrop-blur-md rounded-lg p-1 min-w-[90px] flex flex-col items-center z-50 shadow-xl border border-zinc-800">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); changeQuality(-1); }}
+                    className={cn(
+                      "w-full text-xs py-2 px-3 rounded hover:bg-white/20 transition-colors text-center",
+                      currentQuality === -1 ? "text-red-500 font-bold bg-white/10" : "text-white"
+                    )}
+                  >
+                    Tự động
+                  </button>
+                  {qualityLevels.map((lvl) => (
+                    <button
+                      key={lvl.index}
+                      onClick={(e) => { e.stopPropagation(); changeQuality(lvl.index); }}
+                      className={cn(
+                        "w-full text-xs py-2 px-3 rounded hover:bg-white/20 transition-colors text-center",
+                        currentQuality === lvl.index ? "text-red-500 font-bold bg-white/10" : "text-white"
+                      )}
+                    >
+                      {lvl.height}p
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSpeedMenu(false);
+                  setShowQualityMenu(!showQualityMenu);
+                }}
+                className="text-white hover:text-red-500 transition-colors text-xs font-semibold h-8 px-2 flex items-center justify-center rounded hover:bg-white/10"
+                title="Chất lượng video"
+              >
+                {currentQuality === -1
+                  ? 'Auto'
+                  : `${qualityLevels.find((l) => l.index === currentQuality)?.height || ''}p`}
+              </button>
+            </div>
+          )}
+
           {/* Speed Menu */}
           <div className="relative">
             {showSpeedMenu && (
@@ -1365,7 +1518,11 @@ function HLSPlayer({
               </div>
             )}
             <button
-              onClick={(e) => { e.stopPropagation(); setShowSpeedMenu(!showSpeedMenu); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowQualityMenu(false);
+                setShowSpeedMenu(!showSpeedMenu);
+              }}
               className="text-white hover:text-red-500 transition-colors text-xs font-semibold h-8 w-8 flex items-center justify-center rounded hover:bg-white/10"
               title="Tốc độ phát"
             >
@@ -1390,10 +1547,8 @@ function HLSPlayer({
           playsInline
           {...{
             'webkit-playsinline': 'true',
-            'x-webkit-airplay': 'deny',
           }}
-          disableRemotePlayback
-          preload="metadata"
+          preload="auto"
           poster={poster}
           onLoadedData={(e) => { 
             e.currentTarget.playbackRate = playbackRate; 
@@ -1405,8 +1560,8 @@ function HLSPlayer({
       {/* Loading spinner with Network Warning */}
       {isLoading && !hasError && (
         <div className={cn(
-          "absolute inset-0 flex flex-col items-center justify-center z-30 p-4 text-center transition-all duration-200",
-          currentTime > 0 ? "bg-black/20 pointer-events-none" : "bg-black/75 backdrop-blur-sm pointer-events-auto"
+          "absolute inset-0 flex flex-col items-center justify-center z-30 p-4 text-center transition-all duration-200 pointer-events-none",
+          currentTime > 0 ? "bg-black/20" : "bg-black/60 backdrop-blur-sm"
         )}>
           <Loader2 className="w-10 h-10 text-red-600 animate-spin mb-3" />
           {currentTime === 0 && (
@@ -1669,14 +1824,17 @@ function HLSPlayer({
       >
         {/* Progress bar */}
         <div className="relative w-full">
-          {/* Preview Box - Only render when actively hovered */}
-          {hoverPos !== null && duration > 0 && (
+          {/* Preview Box - Giữ instance HLS sau lần hover đầu tiên để không tải lại playlist liên tục */}
+          {hasActivatedPreview && duration > 0 && (
             <div 
-              className="hidden md:flex absolute bottom-full mb-4 transform -translate-x-1/2 flex-col items-center pointer-events-none transition-opacity duration-200 opacity-100"
-              style={{ left: `${(hoverPos || 0) * 100}%` }}
+              className={cn(
+                "hidden md:flex absolute bottom-full mb-4 transform -translate-x-1/2 flex-col items-center pointer-events-none transition-opacity duration-200",
+                hoverPos !== null ? "opacity-100 visible" : "opacity-0 invisible"
+              )}
+              style={{ left: `${(hoverPos ?? 0) * 100}%` }}
             >
               <div className="w-48 sm:w-64 md:w-80 aspect-video bg-black rounded-lg border-2 border-zinc-500 overflow-hidden shadow-2xl relative mb-1">
-                <VideoPreview url={url} time={hoverTime} />
+                <VideoPreview url={url} time={hoverTime} isActive={hoverPos !== null} />
               </div>
               <div className="bg-black/80 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-mono shadow">
                 {formatTime(hoverTime)}
@@ -1790,9 +1948,9 @@ function HLSPlayer({
 }
 
 // ─── Video Preview ───────────────────────────────────────────
-// Chỉ hiển thị trên desktop và có debounce để tránh tạo nhiều HLS connection
+// Chỉ hiển thị trên desktop, giữ nguyên instance HLS và có debounce để tránh tạo nhiều HLS connection
 
-function VideoPreview({ url, time }: { url: string; time: number }) {
+function VideoPreview({ url, time, isActive }: { url: string; time: number; isActive: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -1824,6 +1982,7 @@ function VideoPreview({ url, time }: { url: string; time: number }) {
   }, [url]);
 
   useEffect(() => {
+    if (!isActive) return;
     const timer = setTimeout(() => {
       if (videoRef.current && Math.abs(videoRef.current.currentTime - time) > 1) {
         videoRef.current.currentTime = time;
@@ -1831,7 +1990,7 @@ function VideoPreview({ url, time }: { url: string; time: number }) {
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [time]);
+  }, [time, isActive]);
 
   return <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />;
 }

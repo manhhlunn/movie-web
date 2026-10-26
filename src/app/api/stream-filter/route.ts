@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 function isAdSegment(line: string): boolean {
+  if (!line) return false;
   const clean = line.trim();
   if (clean.startsWith('#')) return false;
+  // Bỏ qua các phân đoạn sửa lỗi phim của CDN (convertv8, convert...)
   if (/convertv\d*/i.test(clean)) return false;
 
   // 1. Phù hợp định dạng /v8/hash/segment_0001.ts hoặc /v[0-9]+/hash/segment_...
   if (/\/v\d+\/[a-f0-9]{10,}\/segment_\d+\.ts/i.test(clean)) return true;
-  // 2. Định dạng segment_0001.ts với đường dẫn tuyệt đối
-  if (/\/segment_\d+\.ts/i.test(clean) && clean.startsWith('/')) return true;
+  // 2. Định dạng segment_0001.ts với đường dẫn tuyệt đối hoặc chứa /v
+  if (/\/segment_\d+\.ts/i.test(clean) && (clean.startsWith('/') || clean.includes('/v'))) return true;
   // 3. Các từ khoá quảng cáo trong đường dẫn
   if (/(\/|\b)(ads?|advert|qc|quangcao|midroll|preroll)\b/i.test(clean)) return true;
 
@@ -68,6 +70,11 @@ function processM3u8(content: string, playlistUrl: string, requestOrigin: string
       if (skippingAd) {
         skippingAd = false;
         continue; // Bỏ qua DISCONTINUITY kết thúc quảng cáo
+      }
+
+      // Tránh đẩy 2 thẻ #EXT-X-DISCONTINUITY liên tiếp nhau gây lỗi decoder trên iOS Safari
+      if (result.length > 0 && result[result.length - 1] === '#EXT-X-DISCONTINUITY') {
+        continue;
       }
 
       result.push(line);
