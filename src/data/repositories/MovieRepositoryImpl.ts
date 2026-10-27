@@ -61,6 +61,24 @@ class MovieRepositoryImpl implements IMovieRepository {
     return mapV1ListResponse(data as any);
   }
 
+  async getHeroBannerMovies(): Promise<MovieListResult> {
+    try {
+      const data = await phimapiFetch('/v1/api/home');
+      const mapped = mapV1ListResponse(data as any);
+      return {
+        ...mapped,
+        items: mapped.items.map((item) => ({ ...item, source: 'phimapi' as const })),
+      };
+    } catch (e) {
+      console.error('[getHeroBannerMovies] PhimAPI failed:', e);
+    }
+    return {
+      items: [],
+      pagination: { totalItems: 0, totalItemsPerPage: 24, currentPage: 1, totalPages: 1 },
+      cdnImageDomain: 'https://phimimg.com/upload/vod',
+    };
+  }
+
   private async fetchOPhimDetail(slug: string): Promise<Movie | null> {
     try {
       const data = (await ophimFetch(`/phim/${slug}`, 60)) as any;
@@ -81,6 +99,7 @@ class MovieRepositoryImpl implements IMovieRepository {
     try {
       const res = await fetch(`https://phimapi.com/phim/${slug}`, {
         next: { revalidate: 60 },
+        signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
         const data = await res.json();
@@ -103,6 +122,7 @@ class MovieRepositoryImpl implements IMovieRepository {
     try {
       const res = await fetch(`https://phim.nguonc.com/api/film/${slug}`, {
         next: { revalidate: 60 },
+        signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
         const data = await res.json();
@@ -120,6 +140,7 @@ class MovieRepositoryImpl implements IMovieRepository {
     try {
       const res = await fetch(`https://vsmov.com/api/phim/${slug}`, {
         next: { revalidate: 60 },
+        signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
         const data = await res.json();
@@ -158,12 +179,23 @@ class MovieRepositoryImpl implements IMovieRepository {
     // Default: source === 'phimapi' (Nguồn chính)
     const res = await this.fetchPhimAPIDetail(slug);
     if (res) return { ...res, source: 'phimapi' };
-    const fallbackOphim = await this.fetchOPhimDetail(slug);
-    if (fallbackOphim) return { ...fallbackOphim, source: 'ophim' };
-    const fallbackNguonc = await this.fetchNguonCDetail(slug);
-    if (fallbackNguonc) return { ...fallbackNguonc, source: 'nguonc' };
-    const fallbackVsmov = await this.fetchVsmovDetail(slug);
-    if (fallbackVsmov) return { ...fallbackVsmov, source: 'vsmov' };
+
+    // Khi nguồn chính PhimAPI không có phim, truy vấn song song các nguồn phụ để giảm độ trễ
+    const [ophimRes, nguoncRes, vsmovRes] = await Promise.allSettled([
+      this.fetchOPhimDetail(slug),
+      this.fetchNguonCDetail(slug),
+      this.fetchVsmovDetail(slug),
+    ]);
+
+    if (ophimRes.status === 'fulfilled' && ophimRes.value) {
+      return { ...ophimRes.value, source: 'ophim' };
+    }
+    if (nguoncRes.status === 'fulfilled' && nguoncRes.value) {
+      return { ...nguoncRes.value, source: 'nguonc' };
+    }
+    if (vsmovRes.status === 'fulfilled' && vsmovRes.value) {
+      return { ...vsmovRes.value, source: 'vsmov' };
+    }
 
     return null;
   }
@@ -177,7 +209,7 @@ class MovieRepositoryImpl implements IMovieRepository {
       try {
         const res = await fetch(
           `https://vsmov.com/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=24&page=${page}`,
-          { cache: 'no-store' }
+          { cache: 'no-store', signal: AbortSignal.timeout(8000) }
         );
         if (res.ok) {
           const data = await res.json();
@@ -206,7 +238,7 @@ class MovieRepositoryImpl implements IMovieRepository {
       try {
         const res = await fetch(
           `https://phim.nguonc.com/api/films/search?keyword=${encodeURIComponent(keyword)}&page=${page}`,
-          { cache: 'no-store' }
+          { cache: 'no-store', signal: AbortSignal.timeout(8000) }
         );
         if (res.ok) {
           const data = await res.json();
@@ -261,7 +293,7 @@ class MovieRepositoryImpl implements IMovieRepository {
     try {
       const res = await fetch(
         `https://phimapi.com/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}&limit=24&page=${page}`,
-        { cache: 'no-store' }
+        { cache: 'no-store', signal: AbortSignal.timeout(8000) }
       );
       if (res.ok) {
         const data = await res.json();
@@ -289,13 +321,14 @@ class MovieRepositoryImpl implements IMovieRepository {
 
   private buildFilterUrl(
     baseUrl: string,
-    filters?: { category?: string; country?: string; year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): string {
     let url = baseUrl;
     if (filters) {
       if (filters.category) url += `${url.includes('?') ? '&' : '?'}category=${filters.category}`;
       if (filters.country) url += `${url.includes('?') ? '&' : '?'}country=${filters.country}`;
       if (filters.year) url += `${url.includes('?') ? '&' : '?'}year=${filters.year}`;
+      if (filters.sort_field) url += `${url.includes('?') ? '&' : '?'}sort_field=${filters.sort_field}`;
     }
     return url;
   }
@@ -303,7 +336,7 @@ class MovieRepositoryImpl implements IMovieRepository {
   async getMoviesByCategory(
     categorySlug: string,
     page = 1,
-    filters?: { category?: string; country?: string; year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/the-loai/${categorySlug}?page=${page}`, filters);
@@ -322,7 +355,7 @@ class MovieRepositoryImpl implements IMovieRepository {
   async getMoviesByCountry(
     countrySlug: string,
     page = 1,
-    filters?: { category?: string; country?: string; year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/quoc-gia/${countrySlug}?page=${page}`, filters);
@@ -341,7 +374,7 @@ class MovieRepositoryImpl implements IMovieRepository {
   async getMoviesByYear(
     year: string,
     page = 1,
-    filters?: { category?: string; country?: string; year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/nam-phat-hanh/${year}?page=${page}`, filters);
@@ -360,7 +393,7 @@ class MovieRepositoryImpl implements IMovieRepository {
   async getMoviesByList(
     listSlug: string,
     page = 1,
-    filters?: { category?: string; country?: string; year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult> {
     try {
       const url = this.buildFilterUrl(`/v1/api/danh-sach/${listSlug}?page=${page}`, filters);

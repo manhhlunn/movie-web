@@ -18,11 +18,12 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://mphim.site'),
   title: {
     template: "%s | MPHIM",
-    default: "MPHIM - Watch Free Movies & TV Shows",
+    default: "MPHIM - Xem Phim Online Chuẩn HD Miễn Phí",
   },
-  description: "High-quality movie streaming platform with no ads. Watch the latest movies and TV series online for free.",
+  description: "Trang web xem phim online chất lượng cao miễn phí, cập nhật nhanh các bộ phim mới, phim chiếu rạp, phim bộ, phim lẻ với phụ đề Vietsub và Thuyết minh sắc nét.",
 };
 
 export default function RootLayout({

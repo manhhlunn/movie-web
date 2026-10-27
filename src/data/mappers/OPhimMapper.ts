@@ -121,7 +121,11 @@ export function mapMovieFromList(
     : [];
 
   const rawPosterStr = safeString(raw?.poster_url);
-  const rawThumbStr = safeString(raw?.thumb_url);
+  let rawThumbStr = safeString(raw?.thumb_url);
+  // PhimAPI: nếu thiếu thumb_url nhưng có poster_url dạng "-poster.", tự động suy luận "-thumb."
+  if (!rawThumbStr && rawPosterStr.includes('-poster.')) {
+    rawThumbStr = rawPosterStr.replace('-poster.', '-thumb.');
+  }
 
   const posterMapped = resolveImageUrl(rawPosterStr, cdn);
   const thumbMapped = resolveImageUrl(rawThumbStr, cdn);
@@ -134,12 +138,12 @@ export function mapMovieFromList(
   // PhimAPI: poster_url là poster dọc, thumb_url là thumb ngang
   // OPhim (Nguồn chính): thumb_url là ảnh poster của danh sách phim
   const posterUrl = isPhimAPI
-    ? (posterMapped || thumbMapped || '/placeholder-poster.jpg')
-    : (thumbMapped || posterMapped || '/placeholder-poster.jpg');
+    ? (posterMapped || thumbMapped || '/placeholder-poster.svg')
+    : (thumbMapped || posterMapped || '/placeholder-poster.svg');
 
   const thumbUrl = isPhimAPI
-    ? (thumbMapped || posterMapped || '/placeholder-poster.jpg')
-    : (posterMapped || thumbMapped || '/placeholder-poster.jpg');
+    ? (thumbMapped || posterMapped || '/placeholder-poster.svg')
+    : (posterMapped || thumbMapped || '/placeholder-poster.svg');
 
   return {
     id: safeString(raw?._id),
@@ -256,8 +260,8 @@ export function mapNguonCMovieFromList(raw: Record<string, unknown>): Movie {
   const thumbRaw = safeString(raw?.thumb_url);
 
   // Nguồn C dùng poster ở field thumb_url
-  const posterUrl = thumbRaw || posterRaw || '/placeholder-poster.jpg';
-  const thumbUrl = posterRaw || thumbRaw || '/placeholder-poster.jpg';
+  const posterUrl = thumbRaw || posterRaw || '/placeholder-poster.svg';
+  const thumbUrl = posterRaw || thumbRaw || '/placeholder-poster.svg';
 
   let categories: Category[] = [];
   let countries: Country[] = [];
@@ -477,11 +481,13 @@ export function mapVsmovListResponse(body: Record<string, unknown>): MovieListRe
  * Map VSMOV (vsmov.com) detail response.
  */
 export function mapVsmovMovieDetail(body: Record<string, unknown>): Movie | null {
-  const movieRaw = body?.movie as Record<string, unknown> | undefined;
+  const movieRaw = (body?.movie || (body?.data as Record<string, unknown>)?.movie || body?.data) as Record<string, unknown> | undefined;
   if (!movieRaw) return null;
 
   const base = mapVsmovMovieFromList(movieRaw);
-  const episodesRaw = Array.isArray(body?.episodes) ? body.episodes : [];
+  const episodesRaw = Array.isArray(body?.episodes)
+    ? body.episodes
+    : (Array.isArray((body?.data as Record<string, unknown>)?.episodes) ? (body?.data as Record<string, unknown>)?.episodes as unknown[] : []);
 
   const servers: ServerData[] = episodesRaw.map((server: any) => {
     let sName = safeString(server?.server_name, 'VSMOV #1').replace(/[\r\n]+/g, ' ').trim();

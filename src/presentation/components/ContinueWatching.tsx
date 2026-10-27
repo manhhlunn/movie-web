@@ -3,11 +3,17 @@
 import { useEffect, useState } from 'react';
 import { Movie } from '@/domain/entities/Movie';
 import { getHistory, removeFromHistory } from '@/lib/userStore';
-import { deleteOnlineWatchHistory, getUserId, fetchUserHistory } from '@/lib/syncHistory';
+import { getUserId, fetchUserHistory } from '@/lib/syncHistory';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Play, X } from 'lucide-react';
 import { motion } from 'framer-motion';
+
+function formatEpisodeDisplay(slug?: string | null): string {
+  if (!slug) return '';
+  const clean = slug.replace(/^tap[-_]?/i, '').replace(/^ep[-_]?/i, '');
+  return clean || slug;
+}
 
 export default function ContinueWatching() {
   const [history, setHistory] = useState<Movie[]>([]);
@@ -127,6 +133,17 @@ export default function ContinueWatching() {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex-none w-64 md:w-80 group relative"
               >
+                {/* Quick remove button - placed outside Link to maintain valid HTML5 */}
+                <button
+                  type="button"
+                  onClick={(e) => handleRemove(e, movie.slug)}
+                  className="absolute top-2 right-2 w-7 h-7 bg-black/70 hover:bg-red-600 text-zinc-300 hover:text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20 shadow-lg cursor-pointer"
+                  title="Xóa khỏi danh sách xem tiếp"
+                  aria-label={`Xóa ${movie.name} khỏi danh sách xem tiếp`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
                 <Link href={href} prefetch={false} className="block relative">
                   <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 shadow-lg">
                     <Image
@@ -142,17 +159,6 @@ export default function ContinueWatching() {
                         <Play className="w-6 h-6 text-white fill-white ml-1" />
                       </div>
                     </div>
-                    
-                    {/* Quick remove button */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleRemove(e, movie.slug)}
-                      className="absolute top-2 right-2 w-7 h-7 bg-black/70 hover:bg-red-600 text-zinc-300 hover:text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-20 shadow-lg"
-                      title="Xóa khỏi danh sách xem tiếp"
-                      aria-label={`Xóa ${movie.name} khỏi danh sách xem tiếp`}
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
 
                     {/* Progress Bar (only if has progress) */}
                     {hasProgress && (
@@ -171,7 +177,7 @@ export default function ContinueWatching() {
                     </h3>
                     <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider">
                       {hasProgress 
-                        ? `Tiếp tục: Tập ${movie.lastEpisodeSlug?.split('-').pop()} (${percent}%)` 
+                        ? `Tiếp tục: Tập ${formatEpisodeDisplay(movie.lastEpisodeSlug)} (${percent}%)` 
                         : 'Xem ngay'}
                     </p>
                   </div>

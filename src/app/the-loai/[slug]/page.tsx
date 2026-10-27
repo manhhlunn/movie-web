@@ -21,10 +21,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+async function getInitialCategoryData(slug: string) {
+  'use cache';
+  return getExploreMovies('the-loai', slug, 1).catch(() => undefined);
+}
+
 export default async function CategoryPage({ params }: Props) {
   const { slug } = await params;
   const title = `Phim Thể Loại ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
-  const initialData = await getExploreMovies('the-loai', slug, 1).catch(() => undefined);
+  const initialData = await getInitialCategoryData(slug);
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
       <SharedExplorePage filterType="the-loai" slug={slug} title={title} initialData={initialData} />

@@ -4,15 +4,28 @@ import { useState, useEffect } from 'react';
 import { getFavorites } from '@/lib/userStore';
 import { Movie } from '@/domain/entities/Movie';
 import MovieCard from '@/presentation/components/MovieCard';
+import { Skeleton } from '@/presentation/components/Skeleton';
 import { Heart, Home } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 
 export default function FavoritesPage() {
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    setMovies(getFavorites());
+    const loadFavs = () => {
+      setMovies(getFavorites());
+      setIsLoaded(true);
+    };
+
+    loadFavs();
+    window.addEventListener('storage', loadFavs);
+    window.addEventListener('movie-favorites-changed', loadFavs);
+    return () => {
+      window.removeEventListener('storage', loadFavs);
+      window.removeEventListener('movie-favorites-changed', loadFavs);
+    };
   }, []);
 
   return (
@@ -37,7 +50,13 @@ export default function FavoritesPage() {
           </Link>
         </header>
 
-        {movies.length > 0 ? (
+        {!isLoaded ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Skeleton key={i} className="w-full aspect-[2/3] rounded-lg" />
+            ))}
+          </div>
+        ) : movies.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
             {movies.map((movie, i) => (
               <MovieCard key={movie.slug} movie={movie} index={i} />

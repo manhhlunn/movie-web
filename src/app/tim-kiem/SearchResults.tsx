@@ -1,45 +1,59 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useSearchMovies } from '@/presentation/hooks/useMovies';
+import { useInfiniteSearchMovies } from '@/presentation/hooks/useMovies';
 import MovieCard from '@/presentation/components/MovieCard';
-import Pagination from '@/presentation/components/Pagination';
+import InfiniteScrollTrigger from '@/presentation/components/InfiniteScrollTrigger';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { Layers, Database, Globe } from 'lucide-react';
+import { Movie } from '@/domain/entities/Movie';
 
 export default function SearchResults() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const keyword = searchParams.get('keyword') || '';
-  const pageStr = searchParams.get('page') || '1';
   const sourceParam = (searchParams.get('source') as 'ophim' | 'phimapi' | 'nguonc' | 'vsmov') || 'phimapi';
-  const page = parseInt(pageStr, 10);
 
-  const [activeTab, setActiveTab] = useState<'phimapi' | 'ophim' | 'nguonc' | 'vsmov'>(
+  const activeTab: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov' =
     sourceParam === 'ophim'
       ? 'ophim'
       : sourceParam === 'nguonc'
       ? 'nguonc'
       : sourceParam === 'vsmov'
       ? 'vsmov'
-      : 'phimapi'
-  );
+      : 'phimapi';
 
-  // Sync state if source query parameter in URL changes
-  useEffect(() => {
-    if (sourceParam === 'phimapi' || sourceParam === 'ophim' || sourceParam === 'nguonc' || sourceParam === 'vsmov') {
-      setActiveTab(sourceParam);
+  const {
+    data,
+    isLoading,
+    isError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useInfiniteSearchMovies(keyword, activeTab);
+
+  const movies = useMemo(() => {
+    if (!data?.pages) return [];
+    const seen = new Set<string>();
+    const result: Movie[] = [];
+    for (const page of data.pages) {
+      for (const movie of page.items) {
+        const key = movie.slug || movie.id;
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          result.push(movie);
+        }
+      }
     }
-  }, [sourceParam]);
-
-  const { data, isLoading, isError } = useSearchMovies(keyword, page, activeTab);
+    return result;
+  }, [data]);
 
   const handleTabChange = (tab: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov') => {
-    setActiveTab(tab);
     const newParams = new URLSearchParams(searchParams.toString());
     newParams.set('source', tab);
-    newParams.set('page', '1');
+    newParams.delete('page');
     router.push(`/tim-kiem?${newParams.toString()}`);
   };
 
@@ -121,7 +135,7 @@ export default function SearchResults() {
         <div className="flex flex-col items-center justify-center py-20 text-red-500">
           <p>Đã xảy ra lỗi khi tìm kiếm từ nguồn này. Vui lòng thử lại sau.</p>
         </div>
-      ) : data.items.length === 0 ? (
+      ) : movies.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-zinc-400 space-y-4">
           <p>
             Không tìm thấy kết quả nào cho &quot;{keyword}&quot; ở{' '}
@@ -157,20 +171,20 @@ export default function SearchResults() {
           </div>
         </div>
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-6">
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2 sm:gap-3 lg:gap-4">
-            {data.items.map((movie) => (
+            {movies.map((movie) => (
               <MovieCard key={movie.id || movie.slug} movie={movie} />
             ))}
           </div>
 
-          {data.pagination.totalPages > 1 && (
-            <Pagination
-              currentPage={data.pagination.currentPage}
-              totalPages={data.pagination.totalPages}
-              baseHref={`/tim-kiem?keyword=${encodeURIComponent(keyword)}&source=${activeTab}`}
-            />
-          )}
+          <InfiniteScrollTrigger
+            hasNextPage={!!hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+            fetchNextPage={fetchNextPage}
+            totalLoaded={movies.length}
+          />
         </div>
       )}
     </div>

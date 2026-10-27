@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getHistory } from '@/lib/userStore';
-import { fetchOnlineWatchHistory, deleteOnlineWatchHistory, getUserId, fetchUserHistory, deleteUserHistory } from '@/lib/syncHistory';
+import { getUserId, fetchUserHistory, deleteUserHistory } from '@/lib/syncHistory';
 import { Movie } from '@/domain/entities/Movie';
 import MovieCard from '@/presentation/components/MovieCard';
 import { Clock, Home, Trash2, Cloud, HardDrive } from 'lucide-react';

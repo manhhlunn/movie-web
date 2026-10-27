@@ -44,21 +44,32 @@ END $$;
 -- 3. Tạo Index tối ưu hóa truy vấn tìm kiếm và sắp xếp
 CREATE INDEX IF NOT EXISTS idx_watch_history_user_id ON public.watch_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_watch_history_updated_at ON public.watch_history(updated_at DESC);
+-- Composite Index: Tối ưu trực tiếp cho API GET /api/history (tìm theo user_id sắp xếp updated_at giảm dần mà không cần sort RAM)
+CREATE INDEX IF NOT EXISTS idx_watch_history_user_updated ON public.watch_history(user_id, updated_at DESC);
 
 -- 4. Bật Row Level Security (RLS)
 ALTER TABLE public.watch_history ENABLE ROW LEVEL SECURITY;
 
--- 5. Tạo Policy cho phép truy cập qua API
+-- 5. Tạo Policy bảo mật truy cập
+-- BẢO MẬT: Next.js API Routes trên server sử dụng SUPABASE_SERVICE_ROLE_KEY để thao tác.
+-- service_role có quyền bypass RLS. Chặn người dùng ẩn danh (anon) tự ý đọc/ghi/xóa trực tiếp qua Supabase REST API.
 DROP POLICY IF EXISTS "Allow public history operations" ON public.watch_history;
-CREATE POLICY "Allow public history operations"
+DROP POLICY IF EXISTS "Service role full access" ON public.watch_history;
+DROP POLICY IF EXISTS "Allow authenticated operations" ON public.watch_history;
+
+-- Cấp toàn quyền cho service_role
+CREATE POLICY "Service role full access"
 ON public.watch_history
 FOR ALL
+TO service_role
 USING (true)
 WITH CHECK (true);
 
--- 6. Cấp quyền truy cập cho các roles
-GRANT ALL ON TABLE public.watch_history TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+-- 6. Cấp quyền truy cập cho roles
+-- Thu hồi quyền nguy hiểm (DELETE, UPDATE) của anon để tránh bị xóa sạch dữ liệu từ client
+REVOKE ALL ON TABLE public.watch_history FROM anon;
+GRANT ALL ON TABLE public.watch_history TO service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
 -- 7. Trigger tự động cập nhật updated_at mỗi khi có UPDATE
 CREATE OR REPLACE FUNCTION public.handle_watch_history_updated_at()

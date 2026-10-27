@@ -7,7 +7,7 @@ import { useMovieDetails, useMoviePeoples } from '@/presentation/hooks/useMovies
 import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
-import { cn } from '@/lib/utils';
+import { cn, sanitizeHtml } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 import { toggleFavorite, isFavorite } from '@/lib/userStore';
 import { getUserId, fetchUserHistory } from '@/lib/syncHistory';
@@ -77,15 +77,24 @@ export default function MovieDetailClient({
         }
       });
     } else {
-      const saved = localStorage.getItem(`watch-progress-${slug}`);
-      if (saved) {
-        try {
-          setWatchProgress(JSON.parse(saved));
-        } catch (e) {}
-      }
+      queueMicrotask(() => {
+        const saved = localStorage.getItem(`watch-progress-${slug}`);
+        if (saved) {
+          try {
+            setWatchProgress(JSON.parse(saved));
+          } catch {}
+        }
+        setIsBookmarked(isFavorite(slug));
+      });
     }
-    
-    setIsBookmarked(isFavorite(slug));
+    const handleFavChange = () => setIsBookmarked(isFavorite(slug));
+    window.addEventListener('storage', handleFavChange);
+    window.addEventListener('movie-favorites-changed', handleFavChange);
+
+    return () => {
+      window.removeEventListener('storage', handleFavChange);
+      window.removeEventListener('movie-favorites-changed', handleFavChange);
+    };
   }, [slug, movie]);
 
   const handleToggleFavorite = () => {
@@ -226,7 +235,7 @@ export default function MovieDetailClient({
               )}
               {watchProgress && (
                 <Link
-                  href={`/xem-phim/${slug}/${watchProgress.episodeSlug}`}
+                  href={`/xem-phim/${slug}/${watchProgress.episodeSlug}${sourceParam ? `?source=${sourceParam}` : ''}`}
                   className="inline-flex items-center justify-center px-8 py-3.5 bg-zinc-800 text-white font-semibold rounded-lg hover:bg-zinc-700 transition-colors shadow-lg border border-zinc-700"
                 >
                   <Play className="w-5 h-5 mr-2" />
@@ -261,7 +270,7 @@ export default function MovieDetailClient({
               <h3 className="text-lg font-semibold text-white mb-2">Nội dung</h3>
               <div 
                 className="text-zinc-400 leading-relaxed text-sm md:text-base"
-                dangerouslySetInnerHTML={{ __html: movie.description }} 
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(movie.description) }} 
               />
             </div>
 

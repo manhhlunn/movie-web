@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { User, UserCheck, X, Copy, Check, LogOut, Cloud, ShieldAlert } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { getUserId, setUserId } from '@/lib/syncHistory';
 
 export default function UserSyncModal() {
@@ -84,27 +83,19 @@ export default function UserSyncModal() {
       </button>
 
       {/* Modal Dialog */}
-      <AnimatePresence>
-        {isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsOpen(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            />
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            onClick={() => setIsOpen(false)}
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          />
 
-            {/* Modal Card */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ type: 'spring', duration: 0.3 }}
-              className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 overflow-hidden z-10"
-              onClick={(e) => e.stopPropagation()}
-            >
+          {/* Modal Card */}
+          <div
+            className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
               {/* Close Button */}
               <button
                 type="button"
@@ -252,10 +243,9 @@ export default function UserSyncModal() {
                   </div>
                 </form>
               )}
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
     </>
   );
 }

@@ -1,11 +1,8 @@
 import { Movie } from "@/domain/entities/Movie";
 import {
   syncWatchHistory,
-  fetchOnlineWatchHistory,
-  deleteOnlineWatchHistory,
   getUserId,
   deleteUserHistory,
-  fetchUserHistory,
 } from "@/lib/syncHistory";
 
 const FAVORITES_KEY = "user_favorites";
@@ -14,8 +11,13 @@ const MAX_HISTORY = 50;
 
 export const getFavorites = (): Movie[] => {
   if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem(FAVORITES_KEY);
-  return stored ? JSON.parse(stored) : [];
+  try {
+    const stored = localStorage.getItem(FAVORITES_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch (e) {
+    console.warn('[userStore] Failed to read favorites from localStorage:', e);
+    return [];
+  }
 };
 
 export const toggleFavorite = (movie: Movie): boolean => {
@@ -44,7 +46,15 @@ export const toggleFavorite = (movie: Movie): boolean => {
     isAdded = true;
   }
 
-  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+  try {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+  } catch (e) {
+    console.warn('[userStore] Failed to save favorites to localStorage:', e);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('movie-favorites-changed'));
+  }
   return isAdded;
 };
 
@@ -60,8 +70,13 @@ export const getHistory = (): Movie[] => {
   if (userId) {
     return [];
   }
-  const stored = localStorage.getItem(HISTORY_KEY);
-  return stored ? JSON.parse(stored) : [];
+  try {
+    const stored = localStorage.getItem(HISTORY_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch (e) {
+    console.warn('[userStore] Failed to read history from localStorage:', e);
+    return [];
+  }
 };
 
 export const addToHistory = (
@@ -155,7 +170,11 @@ export const addToHistory = (
     history.pop();
   }
 
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  } catch (e) {
+    console.warn('[userStore] Failed to save history to localStorage:', e);
+  }
 
   // Dispatch event so active components update immediately
   if (typeof window !== 'undefined') {
@@ -164,6 +183,10 @@ export const addToHistory = (
 };
 
 export const removeFromHistory = (slug: string) => {
+  try {
+    localStorage.removeItem(`watch-progress-${slug}`);
+  } catch {}
+
   const userId = getUserId();
   if (userId) {
     // Xóa trực tiếp trên Supabase rồi mới phát sự kiện cập nhật
@@ -177,8 +200,12 @@ export const removeFromHistory = (slug: string) => {
 
   const history = getHistory();
   const filtered = history.filter((m) => m.slug !== slug);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
-  localStorage.removeItem(`watch-progress-${slug}`);
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
+    localStorage.removeItem(`watch-progress-${slug}`);
+  } catch (e) {
+    console.warn('[userStore] Failed to remove history from localStorage:', e);
+  }
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('movie-history-changed'));

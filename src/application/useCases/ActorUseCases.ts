@@ -171,23 +171,15 @@ export async function getActorMovies(
       const lookups = chunk.map(async (m: any) => {
         const mId = m.id;
         if (!mId) return null;
-        const primaryType = (m.media_type === 'tv' || (!m.media_type && m.first_air_date)) ? 'tv' : 'movie';
-        const secondaryType = primaryType === 'tv' ? 'movie' : 'tv';
+        // Xác định chính xác 100% media_type từ TMDB (movie hoặc tv)
+        const mediaType = m.media_type === 'tv' || (!m.media_type && m.first_air_date) ? 'tv' : 'movie';
 
         try {
-          // 1. Thử tra cứu theo type chính từ TMDB (movie hoặc tv)
-          let res = await fetch(`https://phimapi.com/tmdb/${primaryType}/${mId}`, {
+          // 1. Tra cứu trực tiếp theo đúng media_type từ TMDB
+          const res = await fetch(`https://phimapi.com/tmdb/${mediaType}/${mId}`, {
             signal: AbortSignal.timeout(4000),
             next: { revalidate: 86400 }, // Cache 24h
           });
-
-          // 2. Nếu 404, thử nốt type còn lại đề phòng phân loại giữa TMDB và PhimAPI khác nhau
-          if (!res.ok && res.status === 404) {
-            res = await fetch(`https://phimapi.com/tmdb/${secondaryType}/${mId}`, {
-              signal: AbortSignal.timeout(4000),
-              next: { revalidate: 86400 },
-            });
-          }
 
           if (res.ok) {
             const data = await res.json();
@@ -196,7 +188,7 @@ export async function getActorMovies(
             }
           }
 
-          // 3. Fallback: Nếu không tìm thấy qua TMDB ID (ví dụ PhimAPI lưu tmdb.id là null), tìm kiếm theo tên phim trên PhimAPI
+          // 2. Fallback: Nếu không tìm thấy qua TMDB ID (ví dụ PhimAPI lưu tmdb.id là null), tìm kiếm theo tên phim trên PhimAPI
           const origTitle = m.original_title || m.original_name || '';
           const localTitle = m.title || m.name || '';
           const searchKeyword = localTitle || origTitle;

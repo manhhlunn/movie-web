@@ -24,6 +24,9 @@ export interface IMovieRepository {
   /** Get cinema movies / phim chiếu rạp (paginated) */
   getCinemaMovies(page?: number): Promise<MovieListResult>;
 
+  /** Get curated movies for home hero banner from /v1/api/home */
+  getHeroBannerMovies(): Promise<MovieListResult>;
+
   /** Get full movie detail by slug (includes episodes) */
   getMovieDetails(slug: string, source?: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov'): Promise<Movie | null>;
 
@@ -34,28 +37,28 @@ export interface IMovieRepository {
   getMoviesByCategory(
     categorySlug: string, 
     page?: number,
-    filters?: { category?: string, country?: string, year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult>;
   
   /** Get movies by country slug */
   getMoviesByCountry(
     countrySlug: string, 
     page?: number,
-    filters?: { category?: string, country?: string, year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult>;
   
   /** Get movies by year */
   getMoviesByYear(
     year: string, 
     page?: number,
-    filters?: { category?: string, country?: string, year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult>;
 
   /** Get generic list (phim-moi, phim-le, etc.) by slug with combination filters */
   getMoviesByList(
     listSlug: string, 
     page?: number, 
-    filters?: { category?: string, country?: string, year?: string }
+    filters?: { category?: string; country?: string; year?: string; sort_field?: string }
   ): Promise<MovieListResult>;
 
   /** Filter Options */

@@ -3,11 +3,19 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Menu, Film } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { Search, X, Menu, Film, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import UserSyncModal from '@/presentation/components/UserSyncModal';
+
+const UserSyncModal = dynamic(
+  () => import('@/presentation/components/UserSyncModal'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-8 w-24 rounded-full bg-zinc-900/80 animate-pulse border border-zinc-800" />
+    ),
+  }
+);
 
 const NAV_LINKS = [
   { href: '/', label: 'Trang chủ' },
@@ -40,9 +48,36 @@ export default function Navbar() {
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
+    const handlePopState = () => setMobileMenuOpen(false);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+        setMobileMenuOpen(false);
+        setDropdownOpen(false);
+      }
+    };
+
     window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
+
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
@@ -58,14 +93,17 @@ export default function Navbar() {
   };
 
   return (
-    <header
-      className={cn(
-        'fixed top-0 left-0 right-0 z-50 transition-all duration-500',
-        scrolled
-          ? 'bg-black/95 backdrop-blur-xl shadow-2xl shadow-red-900/10'
-          : 'bg-gradient-to-b from-black/80 via-black/40 to-transparent'
-      )}
-    >
+    <header className="fixed top-0 left-0 right-0 z-50">
+      {/* Background bar with backdrop blur — tách riêng để không tạo containing block cho mobile drawer */}
+      <div
+        className={cn(
+          'absolute inset-0 -z-10 transition-all duration-300',
+          scrolled || mobileMenuOpen
+            ? 'bg-black/95 backdrop-blur-xl shadow-2xl shadow-red-900/10'
+            : 'bg-gradient-to-b from-black/80 via-black/40 to-transparent'
+        )}
+      />
+
       <nav className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
@@ -95,11 +133,7 @@ export default function Navbar() {
                   )}
                 >
                   {isActive && (
-                    <motion.div
-                      layoutId="nav-active"
-                      className="absolute inset-0 bg-white/10 rounded-lg"
-                      transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
-                    />
+                    <div className="absolute inset-0 bg-white/10 rounded-lg transition-colors duration-200" />
                   )}
                   <span className="relative z-10">{link.label}</span>
                 </Link>
@@ -123,31 +157,25 @@ export default function Navbar() {
                 <ChevronDown className={cn("w-4 h-4 transition-transform", dropdownOpen ? "rotate-180" : "")} />
               </button>
 
-              <AnimatePresence>
-                {dropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    transition={{ duration: 0.2 }}
-                    className="absolute top-full right-0 mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden py-2"
-                  >
-                    {MORE_LINKS.map((link) => (
-                      <Link
-                        key={link.href}
-                        href={link.href}
-                        onClick={() => setDropdownOpen(false)}
-                        className={cn(
-                          'block px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-800',
-                          pathname === link.href ? 'text-white bg-zinc-800/50' : 'text-zinc-400'
-                        )}
-                      >
-                        {link.label}
-                      </Link>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              {dropdownOpen && (
+                <div
+                  className="absolute top-full right-0 mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150"
+                >
+                  {MORE_LINKS.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setDropdownOpen(false)}
+                      className={cn(
+                        'block px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-800',
+                        pathname === link.href ? 'text-white bg-zinc-800/50' : 'text-zinc-400'
+                      )}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -156,116 +184,109 @@ export default function Navbar() {
             <UserSyncModal />
 
             {/* Search */}
-            <AnimatePresence>
-              {searchOpen ? (
-                <motion.form
-                  initial={{ scaleX: 0, opacity: 0 }}
-                  animate={{ scaleX: 1, opacity: 1 }}
-                  exit={{ scaleX: 0, opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                  onSubmit={handleSearch}
-                  className="absolute inset-x-0 top-0 h-full bg-black z-20 flex items-center px-4 md:relative md:inset-auto md:bg-transparent md:w-[280px] md:px-0 origin-right"
+            {searchOpen ? (
+              <form
+                onSubmit={handleSearch}
+                className="absolute inset-x-0 top-0 h-full bg-black z-20 flex items-center px-4 md:relative md:inset-auto md:bg-transparent md:w-[280px] md:px-0 origin-right animate-in fade-in zoom-in-95 duration-150"
+              >
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Tìm kiếm phim..."
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-full py-2 pl-4 pr-10 text-sm text-white placeholder-zinc-500 focus:outline-none md:bg-zinc-900/90"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchOpen(false);
+                    setSearchQuery('');
+                  }}
+                  className="absolute right-7 md:right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
                 >
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Tìm kiếm phim..."
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-full py-2 pl-4 pr-10 text-sm text-white placeholder-zinc-500 focus:outline-none md:bg-zinc-900/90"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchOpen(false);
-                      setSearchQuery('');
-                    }}
-                    className="absolute right-7 md:right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
-                  >
-                    <X className="w-5 h-5 md:w-4 md:h-4" />
-                  </button>
-                </motion.form>
-              ) : (
-                <motion.button
-                  initial={{ scale: 0.8 }}
-                  animate={{ scale: 1 }}
-                  onClick={() => setSearchOpen(true)}
-                  className="p-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
-                  aria-label="Tìm kiếm"
-                >
-                  <Search className="w-5 h-5" />
-                </motion.button>
-              )}
-            </AnimatePresence>
+                  <X className="w-5 h-5 md:w-4 md:h-4" />
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchOpen(true);
+                  setMobileMenuOpen(false);
+                }}
+                className="p-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
+                aria-label="Tìm kiếm"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+            )}
 
             {/* Mobile Menu Toggle */}
             <button
               className="md:hidden p-2.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Menu"
+              onClick={() => {
+                setMobileMenuOpen(!mobileMenuOpen);
+                setSearchOpen(false);
+              }}
+              aria-label={mobileMenuOpen ? "Đóng menu" : "Mở menu"}
             >
-              <Menu className="w-5 h-5" />
+              {mobileMenuOpen ? <X className="w-5 h-5 text-white" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
-
-        {/* Mobile Menu */}
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.div
-              initial={{ x: '100%', opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: '100%', opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-0 top-[64px] z-40 md:hidden bg-zinc-950/98 backdrop-blur-2xl overflow-y-auto scrollbar-hide pb-20 border-t border-zinc-800/50"
-            >
-              <div className="py-6 px-4 space-y-1">
-                <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4 px-2">
-                  Danh mục chính
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {NAV_LINKS.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={cn(
-                        'block px-4 py-3.5 rounded-xl text-base font-bold transition-all active:scale-95',
-                        pathname === link.href
-                          ? 'text-white bg-red-600 shadow-lg shadow-red-600/20'
-                          : 'text-zinc-400 bg-white/5 hover:text-white'
-                      )}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
-                
-                <div className="pt-8 pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest px-2">
-                  Khám phá thêm
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {MORE_LINKS.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={cn(
-                        'block px-4 py-3 rounded-xl text-sm font-semibold transition-all border border-zinc-800/50 active:scale-95',
-                        pathname === link.href
-                          ? 'text-white border-red-500 bg-red-500/10'
-                          : 'text-zinc-400 bg-white/5 hover:text-white'
-                      )}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </nav>
+
+      {/* Mobile Menu Drawer - đặt ngang cấp với nav trong header */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-x-0 top-16 bottom-0 h-[calc(100dvh-4rem)] z-50 md:hidden bg-zinc-950/98 backdrop-blur-2xl overflow-y-auto scrollbar-hide pb-24 border-t border-zinc-800/60 animate-in fade-in slide-in-from-top-2 duration-200"
+        >
+            <div className="py-6 px-4 space-y-1">
+              <div className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-4 px-2">
+                Danh mục chính
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {NAV_LINKS.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={cn(
+                      'block px-4 py-3.5 rounded-xl text-base font-bold transition-all active:scale-95',
+                      pathname === link.href
+                        ? 'text-white bg-red-600 shadow-lg shadow-red-600/20'
+                        : 'text-zinc-400 bg-white/5 hover:text-white'
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+              
+              <div className="pt-8 pb-4 text-xs font-bold text-zinc-500 uppercase tracking-widest px-2">
+                Khám phá thêm
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {MORE_LINKS.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={cn(
+                      'block px-4 py-3 rounded-xl text-sm font-semibold transition-all border border-zinc-800/50 active:scale-95',
+                      pathname === link.href
+                        ? 'text-white border-red-500 bg-red-500/10'
+                        : 'text-zinc-400 bg-white/5 hover:text-white'
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
     </header>
   );
 }

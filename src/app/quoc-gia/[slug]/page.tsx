@@ -20,10 +20,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+async function getInitialCountryData(slug: string) {
+  'use cache';
+  return getExploreMovies('quoc-gia', slug, 1).catch(() => undefined);
+}
+
 export default async function CountryPage({ params }: Props) {
   const { slug } = await params;
   const title = `Phim Quốc Gia ${slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}`;
-  const initialData = await getExploreMovies('quoc-gia', slug, 1).catch(() => undefined);
+  const initialData = await getInitialCountryData(slug);
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
       <SharedExplorePage filterType="quoc-gia" slug={slug} title={title} initialData={initialData} />

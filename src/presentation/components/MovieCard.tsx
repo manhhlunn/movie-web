@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, memo } from 'react';
+import { useState, memo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Play, Clock, Film, Star } from 'lucide-react';
@@ -18,6 +18,14 @@ interface MovieCardProps {
 const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl }: MovieCardProps) => {
   const initialSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.svg';
   const [imgSrc, setImgSrc] = useState(initialSrc);
+  const [prevInitial, setPrevInitial] = useState(initialSrc);
+
+  // Sync state cleanly if movie prop changes without triggering useEffect churn
+  if (prevInitial !== initialSrc) {
+    setPrevInitial(initialSrc);
+    setImgSrc(initialSrc);
+  }
+
   const effectiveSource = movie.source || propsSource;
   const hasProgress = !!movie.lastEpisodeSlug;
   const href = (preferWatchUrl && hasProgress)
@@ -27,11 +35,6 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
   const percent = (movie.lastTime && movie.lastDuration && movie.lastDuration > 0)
     ? Math.min(100, Math.max(3, Math.round((movie.lastTime / movie.lastDuration) * 100)))
     : 0;
-
-  // Sync state if movie prop changes
-  useEffect(() => {
-    setImgSrc(movie.posterUrl || movie.thumbUrl || '/placeholder-poster.svg');
-  }, [movie.posterUrl, movie.thumbUrl]);
 
   return (
     <div

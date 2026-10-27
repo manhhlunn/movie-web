@@ -16,10 +16,11 @@ export default function HeroSection({ movies }: HeroSectionProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const autoPlayRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const containerRef = useRef<HTMLElement>(null);
 
-  const validMovies = movies?.slice(0, 5) || [];
+  const validMovies = movies || [];
   const movie = validMovies[activeIndex];
 
   // Auto-advance every 6s
@@ -31,7 +32,23 @@ export default function HeroSection({ movies }: HeroSectionProps) {
     return () => {
       if (autoPlayRef.current) clearInterval(autoPlayRef.current);
     };
-  }, [isAutoPlaying, validMovies.length, activeIndex]);
+  }, [isAutoPlaying, validMovies.length]);
+
+  // Tạm dừng auto-play khi người dùng chuyển sang tab khác để tiết kiệm CPU và pin
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsAutoPlaying(document.visibilityState === 'visible');
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current);
+    };
+  }, []);
 
   // Scroll active thumb into view
   useEffect(() => {
@@ -56,7 +73,8 @@ export default function HeroSection({ movies }: HeroSectionProps) {
   const goTo = (idx: number) => {
     setActiveIndex(idx);
     setIsAutoPlaying(false);
-    setTimeout(() => setIsAutoPlaying(true), 12000);
+    if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current);
+    resumeTimeoutRef.current = setTimeout(() => setIsAutoPlaying(true), 12000);
   };
 
   const prev = () => goTo((activeIndex - 1 + validMovies.length) % validMovies.length);
@@ -158,26 +176,27 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             </p>
 
             <div className="flex flex-wrap gap-3">
-              <Link prefetch={false} href={firstEpisodeSlug ? `/xem-phim/${movie.slug}/${firstEpisodeSlug}` : `/phim/${movie.slug}`}>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="flex items-center gap-2 px-7 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-2xl shadow-red-600/30 transition-colors"
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Link
+                  prefetch={false}
+                  href={`/xem-phim/${movie.slug}/${firstEpisodeSlug || 'tap-1'}`}
+                  className="inline-flex items-center gap-2 px-7 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-2xl shadow-red-600/30 transition-colors"
                 >
                   <Play className="w-5 h-5 fill-white" />
                   Xem ngay
-                </motion.button>
-              </Link>
-              <Link prefetch={false} href={`/phim/${movie.slug}`}>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="flex items-center gap-2 px-7 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl backdrop-blur-sm border border-white/10 transition-colors"
+                </Link>
+              </motion.div>
+
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Link
+                  prefetch={false}
+                  href={`/phim/${movie.slug}`}
+                  className="inline-flex items-center gap-2 px-7 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl backdrop-blur-sm border border-white/10 transition-colors"
                 >
                   <Info className="w-5 h-5" />
                   Chi tiết
-                </motion.button>
-              </Link>
+                </Link>
+              </motion.div>
             </div>
           </motion.div>
         </AnimatePresence>

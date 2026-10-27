@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
+function normalizeToMilliseconds(rawPos: number, rawDur: number, hasExplicitMs: boolean) {
+  if (hasExplicitMs) {
+    return {
+      positionMs: Math.round(rawPos),
+      durationMs: Math.round(rawDur),
+    };
+  }
+
+  // Nhận diện dữ liệu cũ hoặc client gửi theo giây:
+  // - Nếu duration > 0 và < 20,000 (dưới 5.5 tiếng khi tính bằng giây; trong khi ở đơn vị ms, 20,000 ms chỉ là 20 giây)
+  // - Hoặc position có phần thập phân (!Number.isInteger) và < 86,400
+  // - Hoặc duration = 0 và position > 0 && position < 1000
+  const isSeconds =
+    (rawDur > 0 && rawDur < 20000) ||
+    (!Number.isInteger(rawPos) && rawPos > 0 && rawPos < 86400) ||
+    (rawDur === 0 && rawPos > 0 && rawPos < 1000);
+
+  return {
+    positionMs: isSeconds ? Math.round(rawPos * 1000) : Math.round(rawPos),
+    durationMs: isSeconds ? Math.round(rawDur * 1000) : Math.round(rawDur),
+  };
+}
+
 function formatHistoryRow(row: any) {
   if (!row) return null;
   const movieName = row.movie_name || row.movieName || '';
@@ -10,17 +33,8 @@ function formatHistoryRow(row: any) {
   const rawPos = Number(row.position) || 0;
   const rawDur = Number(row.duration) || 0;
 
-  // Quy đổi về mili-giây (Long) cho Android/Kotlin ExoPlayer và Web player
-  // Nếu dữ liệu cũ lưu theo giây (< 86400 và có số thập phân hoặc < 1000) -> nhân 1000
-  const positionMs =
-    rawPos > 0 && rawPos < 86400 && (!Number.isInteger(rawPos) || rawPos < 1000)
-      ? Math.round(rawPos * 1000)
-      : Math.round(rawPos);
-
-  const durationMs =
-    rawDur > 0 && rawDur < 86400 && (!Number.isInteger(rawDur) || rawDur < 1000)
-      ? Math.round(rawDur * 1000)
-      : Math.round(rawDur);
+  // Chuẩn hóa đảm bảo luôn trả về mili-giây (Long) cho Android/Kotlin ExoPlayer và Web player
+  const { positionMs, durationMs } = normalizeToMilliseconds(rawPos, rawDur, false);
 
   const userId = row.user_id || row.userId || row.sync_id || row.syncId || '';
 
@@ -48,6 +62,16 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+function jsonWithCors(data: any, init?: ResponseInit) {
+  return NextResponse.json(data, {
+    ...init,
+    headers: {
+      ...CORS_HEADERS,
+      ...(init?.headers || {}),
+    },
+  });
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
@@ -68,14 +92,14 @@ export async function GET(
     const userId = id?.trim();
 
     if (!userId) {
-      return NextResponse.json(
+      return jsonWithCors(
         { success: false, error: 'Thiếu ID người dùng.' },
         { status: 400 }
       );
     }
 
     if (!isSupabaseConfigured || !supabase) {
-      return NextResponse.json({
+      return jsonWithCors({
         success: false,
         warning: 'Supabase chưa được cấu hình biến môi trường (.env.local).',
         items: [],
@@ -99,10 +123,10 @@ export async function GET(
 
       if (error) {
         console.error('[API History User] Lỗi lấy chi tiết phim:', error);
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        return jsonWithCors({ success: false, error: error.message }, { status: 500 });
       }
 
-      return NextResponse.json({
+      return jsonWithCors({
         success: true,
         userId,
         item: formatHistoryRow(data),
@@ -119,17 +143,17 @@ export async function GET(
 
     if (error) {
       console.error('[API History User] Lỗi lấy danh sách lịch sử:', error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      return jsonWithCors({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       userId,
       items: (data || []).map(formatHistoryRow),
     });
   } catch (err: any) {
     console.error('[API History User] Internal Server Error:', err);
-    return NextResponse.json(
+    return jsonWithCors(
       { success: false, error: err?.message || 'Internal Server Error' },
       { status: 500 }
     );
@@ -149,7 +173,7 @@ export async function POST(
     const userId = id?.trim();
 
     if (!userId) {
-      return NextResponse.json(
+      return jsonWithCors(
         { success: false, error: 'Thiếu ID người dùng.' },
         { status: 400 }
       );
@@ -163,8 +187,6 @@ export async function POST(
       server_index,
       episodeIndex = 0,
       episode_index,
-      episodeSlug,
-      episode_slug,
       position = 0,
       duration = 0,
       movieName,
@@ -176,14 +198,14 @@ export async function POST(
     } = body;
 
     if (!slug || !source) {
-      return NextResponse.json(
+      return jsonWithCors(
         { success: false, error: 'Thiếu thông tin bắt buộc: slug và source.' },
         { status: 400 }
       );
     }
 
     if (!isSupabaseConfigured || !supabase) {
-      return NextResponse.json({
+      return jsonWithCors({
         success: false,
         warning: 'Supabase chưa được cấu hình biến môi trường (.env.local).',
       });
@@ -198,35 +220,36 @@ export async function POST(
       Math.floor(Number(body.playerIndex ?? body.player_index ?? episodeIndex ?? episode_index) || 0)
     );
 
+    const hasExplicitMs = body.positionMs !== undefined || body.position_ms !== undefined;
     const rawPos = Number(body.positionMs ?? body.position_ms ?? position) || 0;
     const rawDur = Number(body.durationMs ?? body.duration_ms ?? duration) || 0;
 
-    // Chuẩn hóa lưu theo mili-giây (Long)
-    // Nếu client gửi số giây dạng thập phân (ví dụ 3343.06) hoặc < 1000 và không phải mili-giây, nhân 1000
-    const effectivePosition =
-      rawPos > 0 && rawPos < 86400 && (!Number.isInteger(rawPos) || rawPos < 1000)
-        ? Math.round(rawPos * 1000)
-        : Math.round(rawPos);
-
-    const effectiveDuration =
-      rawDur > 0 && rawDur < 86400 && (!Number.isInteger(rawDur) || rawDur < 1000)
-        ? Math.round(rawDur * 1000)
-        : Math.round(rawDur);
+    // Chuẩn hóa lưu theo mili-giây (Long) cho Android/Kotlin ExoPlayer và Web player
+    const { positionMs: effectivePosition, durationMs: effectiveDuration } = normalizeToMilliseconds(
+      rawPos,
+      rawDur,
+      hasExplicitMs
+    );
 
     let finalPosition = Math.max(0, effectivePosition);
     let finalDuration = Math.max(0, effectiveDuration);
 
     // BẢO VỆ TIẾN ĐỘ: Nếu client gửi vị trí <= 0, kiểm tra bản ghi hiện tại trong Supabase.
-    // Nếu bản ghi cũ đã có tiến độ xem > 0, KHÔNG ĐƯỢC ghi đè 0 mà giữ nguyên tiến độ cũ.
+    // Chỉ giữ nguyên tiến độ cũ NẾU cùng serverIndex và episodeIndex. Tránh ghi đè tiến độ tập cũ sang tập mới!
     if (finalPosition <= 0) {
       const { data: existing } = await supabase
         .from('watch_history')
-        .select('position, duration')
+        .select('position, duration, episode_index, server_index')
         .eq('user_id', userId)
         .eq('slug', slug)
         .maybeSingle();
 
-      if (existing && Number(existing.position) > 0) {
+      if (
+        existing &&
+        Number(existing.position) > 0 &&
+        existing.episode_index === effectiveEpisodeIndex &&
+        existing.server_index === effectiveServerIndex
+      ) {
         finalPosition = Number(existing.position);
         finalDuration = Number(existing.duration) || finalDuration;
       }
@@ -256,17 +279,17 @@ export async function POST(
 
     if (error) {
       console.error('[API History User] Lỗi lưu lịch sử:', error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      return jsonWithCors({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       userId,
       data: formatHistoryRow(data),
     });
   } catch (err: any) {
     console.error('[API History User] Internal Server Error:', err);
-    return NextResponse.json(
+    return jsonWithCors(
       { success: false, error: err?.message || 'Internal Server Error' },
       { status: 500 }
     );
@@ -286,14 +309,14 @@ export async function DELETE(
     const userId = id?.trim();
 
     if (!userId) {
-      return NextResponse.json(
+      return jsonWithCors(
         { success: false, error: 'Thiếu ID người dùng.' },
         { status: 400 }
       );
     }
 
     if (!isSupabaseConfigured || !supabase) {
-      return NextResponse.json({
+      return jsonWithCors({
         success: false,
         warning: 'Supabase chưa được cấu hình biến môi trường (.env.local).',
       });
@@ -310,13 +333,13 @@ export async function DELETE(
     const { error } = await query;
     if (error) {
       console.error('[API History User] Lỗi xóa lịch sử:', error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      return jsonWithCors({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, userId });
+    return jsonWithCors({ success: true, userId });
   } catch (err: any) {
     console.error('[API History User] Internal Server Error:', err);
-    return NextResponse.json(
+    return jsonWithCors(
       { success: false, error: err?.message || 'Internal Server Error' },
       { status: 500 }
     );

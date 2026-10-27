@@ -28,20 +28,33 @@ export default function ActorPhotoGallery({ name, images }: ActorPhotoGalleryPro
     const el = scrollRef.current;
     if (!el) return;
 
-    // Lắng nghe lăn chuột tự nhiên: chuyển lăn chuột dọc thành cuộn ngang
+    // Chỉ lắng nghe lăn chuột ngang khi chuột đang rê vào gallery và còn nội dung để cuộn
     const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        e.preventDefault();
-        el.scrollBy({
-          left: e.deltaY * 1.5,
-          behavior: 'auto',
-        });
-        checkScroll();
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
+        const isAtStart = el.scrollLeft <= 0 && e.deltaY < 0;
+        const isAtEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1 && e.deltaY > 0;
+        if (!isAtStart && !isAtEnd) {
+          e.preventDefault();
+          el.scrollBy({
+            left: e.deltaY * 1.5,
+            behavior: 'auto',
+          });
+          checkScroll();
+        }
       }
     };
 
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    const enableWheel = () => el.addEventListener('wheel', onWheel, { passive: false });
+    const disableWheel = () => el.removeEventListener('wheel', onWheel);
+
+    el.addEventListener('mouseenter', enableWheel, { passive: true });
+    el.addEventListener('mouseleave', disableWheel, { passive: true });
+
+    return () => {
+      el.removeEventListener('mouseenter', enableWheel);
+      el.removeEventListener('mouseleave', disableWheel);
+      disableWheel();
+    };
   }, [images]);
 
   const scroll = (direction: 'left' | 'right') => {

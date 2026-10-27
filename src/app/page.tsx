@@ -1,4 +1,4 @@
-import { getHomeMovies, getExploreMovies } from '@/application/useCases/MovieUseCases';
+import { getHomeMovies, getExploreMovies, getHeroBannerMovies, selectHeroBannerMovies } from '@/application/useCases/MovieUseCases';
 import HeroSection from '@/presentation/components/HeroSection';
 import MovieSlider from '@/presentation/components/MovieSlider';
 import ContinueWatching from '@/presentation/components/ContinueWatching';
@@ -7,18 +7,19 @@ import { Movie } from '@/domain/entities/Movie';
 async function getHomeData() {
   'use cache';
   const currentYear = new Date().getFullYear().toString();
-  const [data, heroData] = await Promise.all([
+  const [data, koreanSeriesData, heroBannerData] = await Promise.all([
     getHomeMovies(),
     getExploreMovies('danh-sach', 'phim-bo', 1, {
       country: 'han-quoc',
       year: currentYear,
     }).catch(() => null),
+    getHeroBannerMovies().catch(() => null),
   ]);
-  return { data, heroData, currentYear };
+  return { data, koreanSeriesData, heroBannerData, currentYear };
 }
 
 export default async function Home() {
-  const { data, heroData, currentYear } = await getHomeData();
+  const { data, koreanSeriesData, heroBannerData, currentYear } = await getHomeData();
 
   if (!data) {
     return (
@@ -30,10 +31,11 @@ export default async function Home() {
 
   const { newlyUpdated, singleMovies, seriesMovies, cinemaMovies } = data;
 
-  // Sử dụng phim bộ Hàn Quốc cho hero section, sort theo IMDb vote count
-  const heroMovies: Movie[] = (heroData?.items && heroData.items.length > 0)
-    ? [...heroData.items].sort((a, b) => (b.imdbVoteCount || 0) - (a.imdbVoteCount || 0)).slice(0, 5)
-    : newlyUpdated.items.slice(0, 5);
+  // Lựa chọn 6 phim nổi bật nhất (theo thuật toán xếp hạng Bayes & Popularity) cho Hero section
+  const rawHeroMovies: Movie[] = (heroBannerData?.items && heroBannerData.items.length > 0)
+    ? heroBannerData.items
+    : newlyUpdated.items;
+  const heroMovies = selectHeroBannerMovies(rawHeroMovies, 6);
 
   return (
     <div className="pb-20 space-y-6">
@@ -44,10 +46,10 @@ export default async function Home() {
       </div>
 
       <div className="space-y-0 relative z-10">
-        {heroData?.items && heroData.items.length > 0 && (
+        {koreanSeriesData?.items && koreanSeriesData.items.length > 0 && (
           <MovieSlider 
             title={`Phim Bộ Hàn Quốc ${currentYear}`} 
-            movies={heroData.items} 
+            movies={koreanSeriesData.items} 
             seeMoreHref={`/danh-sach/phim-bo?year=${currentYear}&country=han-quoc`}
           />
         )}

@@ -25,7 +25,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
         images: [movie.posterUrl || movie.thumbUrl],
       },
     };
-  } catch (error) {
+  } catch {
     return { title: 'Lỗi' };
   }
 }

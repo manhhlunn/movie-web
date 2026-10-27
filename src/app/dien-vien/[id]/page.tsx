@@ -11,14 +11,13 @@ interface Props {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
-export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
-  const { id } = await params;
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const sParams = await searchParams;
   const rawName = sParams.name;
   const name = typeof rawName === 'string' ? rawName : 'Diễn viên';
 
   return {
-    title: `Phim của diễn viên ${name} | Tuyển tập phim hay`,
+    title: `Phim của diễn viên ${name}`,
     description: `Danh sách các bộ phim có sự tham gia của diễn viên ${name} mới nhất, chất lượng cao Vietsub Thuyết minh tại MovieWeb.`,
   };
 }

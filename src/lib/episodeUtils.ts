@@ -9,7 +9,7 @@ export function normalizeEpisodeSlug(raw?: string | null): string {
   let s = String(raw).trim();
   try {
     s = decodeURIComponent(s);
-  } catch (e) {
+  } catch {
     // If malformed URI, continue with original
   }
   // Strip Vietnamese diacritics / accents

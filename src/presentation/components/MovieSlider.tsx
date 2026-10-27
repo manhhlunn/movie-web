@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, memo } from 'react';
+import { useRef, useState, useEffect, memo } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Movie } from '@/domain/entities/Movie';
@@ -31,6 +31,12 @@ const MovieSlider = memo(({
     setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
   };
 
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [movies]);
+
   const scroll = (direction: 'left' | 'right') => {
     if (!scrollRef.current) return;
     const scrollAmount = scrollRef.current.clientWidth * 0.8;
@@ -53,6 +59,7 @@ const MovieSlider = memo(({
         {seeMoreHref && (
           <Link
             href={seeMoreHref}
+            prefetch={false}
             className="text-sm text-zinc-400 hover:text-red-500 transition-colors font-medium"
           >
             Xem thêm →
@@ -99,7 +106,7 @@ const MovieSlider = memo(({
         >
           {movies.map((movie, i) => (
             <MovieCard 
-              key={movie.id || movie.slug} 
+              key={`${movie.id || movie.slug || 'movie'}-${i}`} 
               movie={movie} 
               index={i} 
               className={variant === 'wide' ? 'w-[280px] sm:w-[320px]' : 'w-[170px] sm:w-[200px] md:w-[230px] lg:w-[260px]'}

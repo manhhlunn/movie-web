@@ -31,9 +31,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+async function getInitialListData(type: string) {
+  'use cache';
+  return getExploreMovies('danh-sach', type, 1).catch(() => undefined);
+}
+
 export default async function ExplorePage({ params }: Props) {
   const { type } = await params;
-  const initialData = await getExploreMovies('danh-sach', type, 1).catch(() => undefined);
+  const initialData = await getInitialListData(type);
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
       <SharedExplorePage 

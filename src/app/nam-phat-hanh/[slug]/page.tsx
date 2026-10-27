@@ -18,9 +18,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+async function getInitialYearData(slug: string) {
+  'use cache';
+  return getExploreMovies('nam-phat-hanh', slug, 1).catch(() => undefined);
+}
+
 export default async function YearPage({ params }: Props) {
   const { slug } = await params;
-  const initialData = await getExploreMovies('nam-phat-hanh', slug, 1).catch(() => undefined);
+  const initialData = await getInitialYearData(slug);
   return (
     <Suspense fallback={<div className="container py-24 min-h-screen" />}>
       <SharedExplorePage filterType="nam-phat-hanh" slug={slug} title={`Phim Năm Phát Hành ${slug}`} initialData={initialData} />

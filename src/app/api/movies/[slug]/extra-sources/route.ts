@@ -12,9 +12,22 @@ function extractM3u8FromEmbed(embedUrl: string, explicitM3u8?: string): string {
     for (const [, val] of params.entries()) {
       if (val.includes('.m3u8')) return val;
     }
-  } catch (e) {}
+  } catch {}
 
   return explicitM3u8 || '';
+}
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
 }
 
 export async function GET(
@@ -23,7 +36,7 @@ export async function GET(
 ) {
   const { slug } = await params;
   if (!slug) {
-    return NextResponse.json([]);
+    return NextResponse.json([], { headers: CORS_HEADERS });
   }
 
   const extraList: ServerData[] = [];
@@ -62,6 +75,7 @@ export async function GET(
         if (!sName.toLowerCase().includes('ophim') && !sName.toLowerCase().includes('nguồn phụ')) {
           sName = `${sName} (Nguồn Phụ - OPhim)`;
         }
+        if (addedServerNames.has(sName)) return;
         addedServerNames.add(sName);
         extraList.push({
           serverName: sName,
@@ -86,6 +100,8 @@ export async function GET(
         if (!sName.toLowerCase().includes('nguồn c') && !sName.toLowerCase().includes('nguonc')) {
           sName = `${sName} (Nguồn C)`;
         }
+        if (addedServerNames.has(sName)) return;
+        addedServerNames.add(sName);
         extraList.push({
           serverName: sName,
           episodes: Array.isArray(s.items)
@@ -117,6 +133,8 @@ export async function GET(
           sName = `${sName} (VSMOV)`;
         }
         const serverEpisodes = Array.isArray(s.server_data) ? s.server_data : [];
+        if (addedServerNames.has(sName)) return;
+        addedServerNames.add(sName);
         extraList.push({
           serverName: sName,
           episodes: serverEpisodes.map((ep: any) => {
@@ -137,6 +155,7 @@ export async function GET(
 
   return NextResponse.json(extraList, {
     headers: {
+      ...CORS_HEADERS,
       'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=1800',
     },
   });

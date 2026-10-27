@@ -81,8 +81,21 @@ function processM3u8(content: string, playlistUrl: string, requestOrigin: string
       continue;
     }
 
-    // Bỏ qua KEY của quảng cáo
-    if (line.startsWith('#EXT-X-KEY:METHOD=NONE') && skippingAd) {
+    // Xử lý thẻ KEY và MAP (AES-128 key, init map)
+    if (line.startsWith('#EXT-X-KEY') || line.startsWith('#EXT-X-MAP')) {
+      if (line.startsWith('#EXT-X-KEY:METHOD=NONE') && skippingAd) {
+        continue;
+      }
+      // Chuyển relative URI trong thẻ (ví dụ URI="enc.key") thành absolute URL trỏ về CDN gốc
+      const rewrittenKeyLine = line.replace(/URI=["']([^"']+)["']/g, (match, uri) => {
+        try {
+          const absoluteKeyUrl = new URL(uri, playlistUrl).href;
+          return `URI="${absoluteKeyUrl}"`;
+        } catch {
+          return match;
+        }
+      });
+      result.push(rewrittenKeyLine);
       continue;
     }
 
@@ -109,7 +122,7 @@ function processM3u8(content: string, playlistUrl: string, requestOrigin: string
       try {
         const absoluteSegmentUrl = new URL(line, playlistUrl).href;
         result.push(absoluteSegmentUrl);
-      } catch (e) {
+      } catch {
         result.push(line);
       }
       continue;
@@ -121,12 +134,62 @@ function processM3u8(content: string, playlistUrl: string, requestOrigin: string
   return result.join('\n');
 }
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+}
+
+function isValidStreamUrl(urlString: string): boolean {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Chặn loopback, private IPs và Cloud Metadata Service (SSRF Protection)
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('169.254.') ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.local')
+    ) {
+      return false;
+    }
+
+    // Phải là file m3u8 hoặc luồng streaming
+    const pathname = parsed.pathname.toLowerCase();
+    const search = parsed.search.toLowerCase();
+    const isM3u8 = pathname.endsWith('.m3u8') || pathname.includes('.m3u8') || search.includes('.m3u8');
+    if (!isM3u8) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const targetUrl = searchParams.get('url');
 
-  if (!targetUrl) {
-    return new NextResponse('Missing url parameter', { status: 400 });
+  if (!targetUrl || !isValidStreamUrl(targetUrl)) {
+    return new NextResponse('Invalid or forbidden stream URL', { status: 400 });
   }
 
   try {

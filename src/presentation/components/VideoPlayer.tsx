@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Hls from 'hls.js';
+import type Hls from 'hls.js';
 import {
   Play,
   Pause,
@@ -18,14 +18,17 @@ import {
   AlertTriangle,
   RefreshCw,
   ExternalLink,
-  Zap,
   Tv,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { addToHistory } from '@/lib/userStore';
-import { syncWatchHistory, fetchOnlineWatchHistory, getUserId, fetchUserHistory, WatchHistoryItem } from '@/lib/syncHistory';
+import { getUserId, fetchUserHistory } from '@/lib/syncHistory';
 import { isEpisodeMatch } from '@/lib/episodeUtils';
 import { useRouter } from 'next/navigation';
+import { useVideoHotkeys } from '@/presentation/hooks/useVideoHotkeys';
+import { QualitySelector } from '@/presentation/components/player/QualitySelector';
+import { VideoSettingsModal } from '@/presentation/components/player/VideoSettingsModal';
+import { AdSkipOverlay, AdSkippedToast } from '@/presentation/components/player/AdSkipOverlay';
 
 interface VideoPlayerProps {
   linkM3u8?: string;
@@ -134,15 +137,20 @@ export default function VideoPlayer({
 }: VideoPlayerProps) {
   const [useIframeFallback, setUseIframeFallback] = useState(false);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
+  const [prevTrackKey, setPrevTrackKey] = useState(`${linkM3u8}-${episodeSlug}`);
 
-  // Xóa trạng thái kẹt Iframe cũ trong localStorage (nếu có) và luôn mặc định phát HLS khi đổi tập/nguồn
-  // Chỉ cho phép chuyển sang Iframe khi người dùng chủ động bấm nút
+  const currentTrackKey = `${linkM3u8}-${episodeSlug}`;
+  if (prevTrackKey !== currentTrackKey) {
+    setPrevTrackKey(currentTrackKey);
+    setUseIframeFallback(false);
+    setFallbackReason(null);
+  }
+
+  // Xóa trạng thái kẹt Iframe cũ trong localStorage (nếu có) khi đổi tập/nguồn
   useEffect(() => {
     try {
       localStorage.removeItem('player-preferred-mode');
-    } catch (e) {}
-    setUseIframeFallback(false);
-    setFallbackReason(null);
+    } catch {}
   }, [linkM3u8, episodeSlug]);
 
   const handleSwitchToIframe = (reason?: string) => {
@@ -231,8 +239,22 @@ function HLSPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('player-muted') === 'true';
+    }
+    return false;
+  });
+  const [volume, setVolume] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedVolume = localStorage.getItem('player-volume');
+      if (savedVolume !== null) {
+        const v = parseFloat(savedVolume);
+        if (!isNaN(v)) return v;
+      }
+    }
+    return 1;
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -241,7 +263,15 @@ function HLSPlayer({
   const [retryCount, setRetryCount] = useState(0);
 
   // Auto skip ads states
-  const [autoSkipAds, setAutoSkipAds] = useState(true);
+  const [autoSkipAds, setAutoSkipAds] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedAutoSkip = localStorage.getItem('player-autoskip-ads');
+      if (savedAutoSkip !== null) {
+        return savedAutoSkip === 'true';
+      }
+    }
+    return true;
+  });
   const [adSkippedToast, setAdSkippedToast] = useState<string | null>(null);
   const [adRanges, setAdRanges] = useState<{ start: number; end: number; duration: number }[]>([]);
   const [activeAdInfo, setActiveAdInfo] = useState<{ start: number; end: number; duration: number } | null>(null);
@@ -261,13 +291,6 @@ function HLSPlayer({
   useEffect(() => {
     activeAdInfoRef.current = activeAdInfo;
   }, [activeAdInfo]);
-
-  useEffect(() => {
-    const savedAutoSkip = localStorage.getItem('player-autoskip-ads');
-    if (savedAutoSkip !== null) {
-      setAutoSkipAds(savedAutoSkip === 'true');
-    }
-  }, []);
 
   const toggleAutoSkipAds = (val: boolean) => {
     setAutoSkipAds(val);
@@ -292,10 +315,24 @@ function HLSPlayer({
   const handleNextEpisodeRef = useRef<(() => void) | null>(null);
   
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const progressFillRef = useRef<HTMLDivElement>(null);
+  const timeDisplayRef = useRef<HTMLSpanElement>(null);
   const isDraggingRef = useRef(false);
   const targetResumeRef = useRef<number>(0);
   const hasResumedRef = useRef<boolean>(false);
   const isHistoryFetchingRef = useRef<boolean>(true);
+
+  const formatTime = (s: number, dur?: number) => {
+    const totalDuration = dur !== undefined ? dur : duration;
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    
+    if (totalDuration >= 3600 || h > 0) {
+      return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    }
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
 
   const [hoverPos, setHoverPos] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number>(0);
@@ -309,49 +346,38 @@ function HLSPlayer({
   const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>([]);
   const [currentQuality, setCurrentQuality] = useState<number>(-1);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
-  const [isPiPSupported, setIsPiPSupported] = useState(false);
+  const [isPiPSupported] = useState(() =>
+    typeof document !== 'undefined' && 'pictureInPictureEnabled' in document
+  );
   
   // Custom intro/outro settings per movie
-  const [movieSettings, setMovieSettings] = useState({ introDuration: 45, outroDuration: 120 });
-  const [playerSettings, setPlayerSettings] = useState({ skipDuration: 10 });
+  const [movieSettings, setMovieSettings] = useState<{ introDuration: number; outroDuration: number }>(() => {
+    if (typeof window !== 'undefined' && movieSlug) {
+      try {
+        const saved = localStorage.getItem(`movie-settings-${movieSlug}`);
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return { introDuration: 45, outroDuration: 120 };
+  });
+  const [playerSettings, setPlayerSettings] = useState<{ skipDuration: number }>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedPlayer = localStorage.getItem('player-settings');
+        if (savedPlayer) return JSON.parse(savedPlayer);
+      } catch {}
+    }
+    return { skipDuration: 10 };
+  });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
+  // Apply volume / muted state to video element
   useEffect(() => {
-    setIsPiPSupported(typeof document !== 'undefined' && 'pictureInPictureEnabled' in document);
-  }, []);
-
-  // Load custom settings
-  useEffect(() => {
-    if (movieSlug) {
-      const saved = localStorage.getItem(`movie-settings-${movieSlug}`);
-      if (saved) {
-        try {
-          setMovieSettings(JSON.parse(saved));
-        } catch(e) {}
-      }
+    if (videoRef.current) {
+      videoRef.current.volume = volume;
+      videoRef.current.muted = isMuted;
     }
-    
-    const savedPlayer = localStorage.getItem('player-settings');
-    if (savedPlayer) {
-      try {
-        setPlayerSettings(JSON.parse(savedPlayer));
-      } catch(e) {}
-    }
-
-    const savedVolume = localStorage.getItem('player-volume');
-    const savedMuted = localStorage.getItem('player-muted');
-    if (savedVolume !== null) {
-      const v = parseFloat(savedVolume);
-      if (!isNaN(v)) {
-        setVolume(v);
-        if (videoRef.current) videoRef.current.volume = v;
-      }
-    }
-    if (savedMuted === 'true') {
-      setIsMuted(true);
-      if (videoRef.current) videoRef.current.muted = true;
-    }
-  }, [movieSlug]);
+  }, [volume, isMuted]);
 
   const saveSettings = (newMovieSettings: { introDuration: number, outroDuration: number }, newPlayerSettings: { skipDuration: number }) => {
     setMovieSettings(newMovieSettings);
@@ -573,172 +599,14 @@ function HLSPlayer({
       setSlowNetworkWarning(true);
     }, 5000);
 
+    let isCancelled = false;
     let hls: Hls | null = null;
     let onNativeLoaded: (() => void) | null = null;
     let onNativeError: (() => void) | null = null;
 
     const useNativeHLS = isIOS && video.canPlayType('application/vnd.apple.mpegurl');
 
-    if (!useNativeHLS && Hls.isSupported()) {
-      hls = new Hls({
-        preferManagedMediaSource: false, // Tắt ManagedMediaSource để tránh lỗi MSE trên Safari
-        startPosition: targetResumeRef.current > 3 ? targetResumeRef.current : -1,
-        maxLoadingDelay: 4,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        backBufferLength: 60,
-        enableWorker: true,
-        startLevel: -1,
-        capLevelToPlayerSize: true,
-        startFragPrefetch: true,
-        lowLatencyMode: false,
-        maxBufferHole: 0.5,
-      });
-      hlsRef.current = hls;
-      hls.loadSource(url);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-        setIsLoading(false);
-        setSlowNetworkWarning(false);
-
-        // Lấy danh sách độ phân giải nếu Master Playlist có nhiều mức chất lượng
-        if (data?.levels && data.levels.length > 1) {
-          const seenHeights = new Set<number>();
-          const levels: { index: number; height: number }[] = [];
-          data.levels.forEach((lvl, idx) => {
-            if (lvl.height && lvl.height > 0 && !seenHeights.has(lvl.height)) {
-              seenHeights.add(lvl.height);
-              levels.push({ index: idx, height: lvl.height });
-            }
-          });
-          levels.sort((a, b) => b.height - a.height);
-          setQualityLevels(levels);
-        }
-
-        if (targetResumeRef.current > 3) {
-          doSeek(targetResumeRef.current);
-        }
-        const playPromise = video.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => setIsPlaying(true))
-            .catch(() => {
-              // Trình duyệt / iOS chặn autoplay có âm thanh khi chưa tương tác
-              setIsPlaying(false);
-            });
-        }
-      });
-
-      hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
-        // Tự động phát hiện các đoạn quảng cáo (nếu còn trong stream)
-        const frags = data.details?.fragments || [];
-        const detected: { start: number; end: number; duration: number }[] = [];
-        let currentAd: { start: number; end: number; duration: number } | null = null;
-
-        for (const frag of frags) {
-          const segUrl = frag.relurl || frag.url || '';
-          if (isAdSegment(segUrl)) {
-            const fStart = frag.start;
-            const fDur = frag.duration;
-            if (!currentAd) {
-              currentAd = { start: fStart, end: fStart + fDur, duration: fDur };
-            } else {
-              currentAd.end = fStart + fDur;
-              currentAd.duration += fDur;
-            }
-          } else {
-            if (currentAd) {
-              detected.push(currentAd);
-              currentAd = null;
-            }
-          }
-        }
-        if (currentAd) detected.push(currentAd);
-
-        if (detected.length > 0) {
-          const currentStr = JSON.stringify(adRangesRef.current);
-          const newStr = JSON.stringify(detected);
-          if (currentStr !== newStr) {
-            console.log('[VideoPlayer] Phát hiện khoảng quảng cáo cần bỏ qua:', detected);
-            adRangesRef.current = detected;
-            setAdRanges(detected);
-          }
-        }
-      });
-
-      hls.on(Hls.Events.FRAG_CHANGED, (_, data) => {
-        const frag = data.frag;
-        if (!frag) return;
-        const segUrl = frag.relurl || frag.url || '';
-        const isAd = isAdSegment(segUrl);
-        if (isAd) {
-          const matchedAd = adRangesRef.current.find(a => frag.start >= a.start - 1 && frag.start <= a.end) || {
-            start: frag.start,
-            end: frag.start + frag.duration,
-            duration: frag.duration,
-          };
-
-          if (autoSkipAdsRef.current) {
-            if (Date.now() - lastSkippedTimeRef.current > 2000) {
-              lastSkippedTimeRef.current = Date.now();
-              const skipTarget = matchedAd.end + 0.1;
-              console.log(`[VideoPlayer] FRAG_CHANGED: Phát hiện quảng cáo, tự động tua đến ${skipTarget.toFixed(1)}s`);
-              video.currentTime = skipTarget;
-              setAdSkippedToast(`⚡ Đã tự động bỏ qua ${Math.round(matchedAd.duration)}s quảng cáo`);
-              setTimeout(() => setAdSkippedToast(null), 3500);
-            }
-          } else {
-            setActiveAdInfo(matchedAd);
-          }
-        } else {
-          // Chỉ tắt nút Skip Ad nếu thời gian hiện tại không còn nằm trong khoảng quảng cáo nào
-          const v = videoRef.current;
-          const isInAd = v && adRangesRef.current.some(a => v.currentTime >= a.start - 0.25 && v.currentTime < a.end);
-          if (!isInAd) {
-            setActiveAdInfo(null);
-          }
-        }
-      });
-
-      let netRetries = 0;
-      let triedStreamFilterProxy = false;
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              netRetries++;
-              if (netRetries <= 2) {
-                console.warn(`[HLS] Network error retry ${netRetries}/2...`);
-                hls?.startLoad();
-              } else if (!triedStreamFilterProxy && !url.includes('/api/stream-filter')) {
-                triedStreamFilterProxy = true;
-                console.warn('[HLS] Thử kết nối qua proxy /api/stream-filter để vượt lỗi CORS/Ad segment...');
-                hls?.loadSource(`/api/stream-filter?url=${encodeURIComponent(url)}`);
-                hls?.startLoad();
-              } else {
-                console.error('[HLS] Network error max retries reached');
-                setIsLoading(false);
-                setHasError(true);
-                setErrorMessage('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS). Bạn có thể bấm "Thử tải lại" hoặc chuyển sang nguồn phát khác.');
-                hls?.destroy();
-              }
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.warn('[HLS] Media error, attempting recovery...', data);
-              hls?.recoverMediaError();
-              break;
-            default:
-              console.error('[HLS] Unrecoverable error:', data);
-              setIsLoading(false);
-              setHasError(true);
-              setErrorMessage('Không thể phát luồng video từ nguồn này (Codec/Format Error). Bạn có thể chọn server khác hoặc bấm "Dùng Iframe Dự Phòng".');
-              hls?.destroy();
-              break;
-          }
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari / iOS native HLS
+    const setupNativeHLS = () => {
       let nativeLoadedHandled = false;
       let nativeProxyRetried = false;
 
@@ -808,10 +676,6 @@ function HLSPlayer({
       video.addEventListener('canplay', onNativeLoaded);
       video.addEventListener('error', onNativeError);
 
-      // QUAN TRỌNG TRÊN iOS SAFARI:
-      // Gọi video.play() ngay để kích hoạt iOS tải manifest .m3u8.
-      // Nếu iOS chặn Autoplay có tiếng (reject promise), tắt ngay isLoading để hiện nút Play lớn ở giữa màn hình
-      // thay vì treo ở màn hình Loading chờ loadedmetadata (Deadlock).
       const initialPlayPromise = video.play();
       if (initialPlayPromise !== undefined) {
         initialPlayPromise
@@ -821,18 +685,198 @@ function HLSPlayer({
             setIsPlaying(true);
           })
           .catch(() => {
-            // Autoplay bị iOS chặn -> mở khóa giao diện ngay để người dùng chạm nút Play
             setIsLoading(false);
             setIsPlaying(false);
           });
       }
+    };
+
+    if (useNativeHLS) {
+      setupNativeHLS();
     } else {
-      setIsLoading(false);
-      setHasError(true);
-      setErrorMessage('Trình duyệt không hỗ trợ phát định dạng video HLS này.');
+      // Dynamic import hls.js: chỉ tải khi client không phải iOS và cần phát HLS
+      import('hls.js').then((HlsModule) => {
+        if (isCancelled) return;
+        const Hls = HlsModule.default;
+
+        if (!Hls.isSupported()) {
+          if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            setupNativeHLS();
+          } else {
+            setIsLoading(false);
+            setHasError(true);
+            setErrorMessage('Trình duyệt không hỗ trợ phát định dạng video HLS này.');
+          }
+          return;
+        }
+
+        hls = new Hls({
+          preferManagedMediaSource: false, // Tắt ManagedMediaSource để tránh lỗi MSE trên Safari
+          startPosition: targetResumeRef.current > 3 ? targetResumeRef.current : -1,
+          maxLoadingDelay: 4,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          backBufferLength: 60,
+          enableWorker: true,
+          startLevel: -1,
+          capLevelToPlayerSize: true,
+          startFragPrefetch: true,
+          lowLatencyMode: false,
+          maxBufferHole: 0.5,
+        });
+        hlsRef.current = hls;
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+          setIsLoading(false);
+          setSlowNetworkWarning(false);
+
+          // Lấy danh sách độ phân giải nếu Master Playlist có nhiều mức chất lượng
+          if (data?.levels && data.levels.length > 1) {
+            const seenHeights = new Set<number>();
+            const levels: { index: number; height: number }[] = [];
+            data.levels.forEach((lvl, idx) => {
+              if (lvl.height && lvl.height > 0 && !seenHeights.has(lvl.height)) {
+                seenHeights.add(lvl.height);
+                levels.push({ index: idx, height: lvl.height });
+              }
+            });
+            levels.sort((a, b) => b.height - a.height);
+            setQualityLevels(levels);
+          }
+
+          if (targetResumeRef.current > 3) {
+            doSeek(targetResumeRef.current);
+          }
+          const playPromise = video.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => setIsPlaying(true))
+              .catch(() => {
+                // Trình duyệt / iOS chặn autoplay có âm thanh khi chưa tương tác
+                setIsPlaying(false);
+              });
+          }
+        });
+
+        hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
+          // Tự động phát hiện các đoạn quảng cáo (nếu còn trong stream)
+          const frags = data.details?.fragments || [];
+          const detected: { start: number; end: number; duration: number }[] = [];
+          let currentAd: { start: number; end: number; duration: number } | null = null;
+
+          for (const frag of frags) {
+            const segUrl = frag.relurl || frag.url || '';
+            if (isAdSegment(segUrl)) {
+              const fStart = frag.start;
+              const fDur = frag.duration;
+              if (!currentAd) {
+                currentAd = { start: fStart, end: fStart + fDur, duration: fDur };
+              } else {
+                currentAd.end = fStart + fDur;
+                currentAd.duration += fDur;
+              }
+            } else {
+              if (currentAd) {
+                detected.push(currentAd);
+                currentAd = null;
+              }
+            }
+          }
+          if (currentAd) detected.push(currentAd);
+
+          if (detected.length > 0) {
+            const currentStr = JSON.stringify(adRangesRef.current);
+            const newStr = JSON.stringify(detected);
+            if (currentStr !== newStr) {
+              console.log('[VideoPlayer] Phát hiện khoảng quảng cáo cần bỏ qua:', detected);
+              adRangesRef.current = detected;
+              setAdRanges(detected);
+            }
+          }
+        });
+
+        hls.on(Hls.Events.FRAG_CHANGED, (_, data) => {
+          const frag = data.frag;
+          if (!frag) return;
+          const segUrl = frag.relurl || frag.url || '';
+          const isAd = isAdSegment(segUrl);
+          if (isAd) {
+            const matchedAd = adRangesRef.current.find(a => frag.start >= a.start - 1 && frag.start <= a.end) || {
+              start: frag.start,
+              end: frag.start + frag.duration,
+              duration: frag.duration,
+            };
+
+            if (autoSkipAdsRef.current) {
+              if (Date.now() - lastSkippedTimeRef.current > 2000) {
+                lastSkippedTimeRef.current = Date.now();
+                const skipTarget = matchedAd.end + 0.1;
+                console.log(`[VideoPlayer] FRAG_CHANGED: Phát hiện quảng cáo, tự động tua đến ${skipTarget.toFixed(1)}s`);
+                video.currentTime = skipTarget;
+                setAdSkippedToast(`⚡ Đã tự động bỏ qua ${Math.round(matchedAd.duration)}s quảng cáo`);
+                setTimeout(() => setAdSkippedToast(null), 3500);
+              }
+            } else {
+              setActiveAdInfo(matchedAd);
+            }
+          } else {
+            // Chỉ tắt nút Skip Ad nếu thời gian hiện tại không còn nằm trong khoảng quảng cáo nào
+            const v = videoRef.current;
+            const isInAd = v && adRangesRef.current.some(a => v.currentTime >= a.start - 0.25 && v.currentTime < a.end);
+            if (!isInAd) {
+              setActiveAdInfo(null);
+            }
+          }
+        });
+
+        let netRetries = 0;
+        let triedStreamFilterProxy = false;
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                netRetries++;
+                if (netRetries <= 2) {
+                  console.warn(`[HLS] Network error retry ${netRetries}/2...`);
+                  hls?.startLoad();
+                } else if (!triedStreamFilterProxy && !url.includes('/api/stream-filter')) {
+                  triedStreamFilterProxy = true;
+                  console.warn('[HLS] Thử kết nối qua proxy /api/stream-filter để vượt lỗi CORS/Ad segment...');
+                  hls?.loadSource(`/api/stream-filter?url=${encodeURIComponent(url)}`);
+                  hls?.startLoad();
+                } else {
+                  console.error('[HLS] Network error max retries reached');
+                  setIsLoading(false);
+                  setHasError(true);
+                  setErrorMessage('Lỗi mạng hoặc server video không phản hồi (Network Timeout/CORS). Bạn có thể bấm "Thử tải lại" hoặc chuyển sang nguồn phát khác.');
+                  hls?.destroy();
+                }
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.warn('[HLS] Media error, attempting recovery...', data);
+                hls?.recoverMediaError();
+                break;
+              default:
+                console.error('[HLS] Unrecoverable error:', data);
+                setIsLoading(false);
+                setHasError(true);
+                setErrorMessage('Không thể phát luồng video từ nguồn này (Codec/Format Error). Bạn có thể chọn server khác hoặc bấm "Dùng Iframe Dự Phòng".');
+                hls?.destroy();
+                break;
+            }
+          }
+        });
+      }).catch((err) => {
+        console.error('[HLS Import Error]', err);
+        if (!isCancelled && video.canPlayType('application/vnd.apple.mpegurl')) {
+          setupNativeHLS();
+        }
+      });
     }
 
     return () => {
+      isCancelled = true;
       clearTimeout(slowTimer);
       clearTimeout(historyFetchTimeout);
       if (previewHoverTimerRef.current) {
@@ -866,10 +910,16 @@ function HLSPlayer({
     const video = videoRef.current;
     if (!video) return;
 
+    let lastSecond = -1;
+
     const onTimeUpdate = () => {
       const v = videoRef.current;
-      if (v && adRangesRef.current.length > 0) {
-        const curT = v.currentTime;
+      if (!v) return;
+
+      const curT = v.currentTime;
+      const dur = v.duration || 0;
+
+      if (adRangesRef.current.length > 0) {
         const currentAd = adRangesRef.current.find(ad => curT >= ad.start - 0.25 && curT < ad.end);
         if (currentAd) {
           if (autoSkipAdsRef.current) {
@@ -890,9 +940,24 @@ function HLSPlayer({
       }
 
       if (pendingSeekTimeRef.current === null) {
-        setCurrentTime(video.currentTime);
-        if (!isDraggingRef.current) {
-          setProgress(video.duration ? (video.currentTime / video.duration) * 100 : 0);
+        const pct = dur > 0 ? (curT / dur) * 100 : 0;
+        // 1. Cập nhật DOM thanh tiến độ trực tiếp (mượt 60fps, không kích hoạt re-render React)
+        if (progressFillRef.current && !isDraggingRef.current) {
+          progressFillRef.current.style.width = `${pct}%`;
+        }
+        // 2. Cập nhật nhãn thời gian qua ref
+        if (timeDisplayRef.current) {
+          timeDisplayRef.current.textContent = `${formatTime(curT, dur)} / ${formatTime(dur, dur)}`;
+        }
+
+        // 3. Chỉ kích hoạt React state khi số giây thay đổi (1 lần/giây thay vì 4-5 lần/giây)
+        const curSec = Math.floor(curT);
+        if (curSec !== lastSecond) {
+          lastSecond = curSec;
+          setCurrentTime(curT);
+          if (!isDraggingRef.current) {
+            setProgress(pct);
+          }
         }
       }
     };
@@ -955,6 +1020,9 @@ function HLSPlayer({
         (document as any).msFullscreenElement
       );
       setIsFullscreen(isCurrentlyFullscreen);
+      if (!isCurrentlyFullscreen) {
+        setIsRotated(false);
+      }
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -986,58 +1054,8 @@ function HLSPlayer({
     };
   }, []);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
-      if (
-        document.activeElement?.tagName === 'INPUT' || 
-        document.activeElement?.tagName === 'TEXTAREA' ||
-        (document.activeElement as HTMLElement)?.isContentEditable
-      ) return;
 
-      const video = videoRef.current;
-      if (!video) return;
 
-      switch (e.key) {
-        case 'ArrowRight':
-          e.preventDefault();
-          skipForward();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          skipBackward();
-          break;
-        case ' ':
-          e.preventDefault();
-          togglePlay();
-          showControlsTemporarily();
-          break;
-        case 'f':
-        case 'F':
-          e.preventDefault();
-          toggleFullscreen();
-          break;
-        case 'm':
-        case 'M':
-          e.preventDefault();
-          toggleMute();
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, isFullscreen, isMuted, duration, playerSettings.skipDuration]); // Re-bind when state used in functions changes
-
-  // Handle auto-rotate on fullscreen
-  useEffect(() => {
-    if (isFullscreen && window.innerWidth < 768) {
-      // Auto-suggest rotation or just allow manual
-    } else if (!isFullscreen) {
-      setIsRotated(false);
-    }
-  }, [isFullscreen]);
 
   const togglePlay = () => {
     const video = videoRef.current;
@@ -1259,6 +1277,9 @@ function HLSPlayer({
     }
 
     if (isDraggingRef.current) {
+      if (progressFillRef.current) {
+        progressFillRef.current.style.width = `${pos * 100}%`;
+      }
       setProgress(pos * 100);
     }
   };
@@ -1347,16 +1368,16 @@ function HLSPlayer({
     }, 1500); // 1.5s is a better balance for mobile
   };
 
-  const formatTime = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = Math.floor(s % 60);
-    
-    if (duration >= 3600 || h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-    }
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  };
+  // Keyboard shortcuts
+  useVideoHotkeys({
+    onTogglePlay: togglePlay,
+    onSkipForward: skipForward,
+    onSkipBackward: skipBackward,
+    onToggleFullscreen: toggleFullscreen,
+    onToggleMute: toggleMute,
+    onShowControls: showControlsTemporarily,
+    enabled: true,
+  });
 
   const introLen = movieSettings.introDuration;
   const outroLen = movieSettings.outroDuration;
@@ -1456,48 +1477,17 @@ function HLSPlayer({
           {/* Top Right: Chất lượng, Tốc độ & Cài đặt */}
           <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
           {/* Quality Menu */}
-          {qualityLevels.length > 1 && (
-            <div className="relative">
-              {showQualityMenu && (
-                <div className="absolute top-full right-0 mt-2 bg-black/90 backdrop-blur-md rounded-lg p-1 min-w-[90px] flex flex-col items-center z-50 shadow-xl border border-zinc-800">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); changeQuality(-1); }}
-                    className={cn(
-                      "w-full text-xs py-2 px-3 rounded hover:bg-white/20 transition-colors text-center",
-                      currentQuality === -1 ? "text-red-500 font-bold bg-white/10" : "text-white"
-                    )}
-                  >
-                    Tự động
-                  </button>
-                  {qualityLevels.map((lvl) => (
-                    <button
-                      key={lvl.index}
-                      onClick={(e) => { e.stopPropagation(); changeQuality(lvl.index); }}
-                      className={cn(
-                        "w-full text-xs py-2 px-3 rounded hover:bg-white/20 transition-colors text-center",
-                        currentQuality === lvl.index ? "text-red-500 font-bold bg-white/10" : "text-white"
-                      )}
-                    >
-                      {lvl.height}p
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowSpeedMenu(false);
-                  setShowQualityMenu(!showQualityMenu);
-                }}
-                className="text-white hover:text-red-500 transition-colors text-xs font-semibold h-8 px-2 flex items-center justify-center rounded hover:bg-white/10"
-                title="Chất lượng video"
-              >
-                {currentQuality === -1
-                  ? 'Auto'
-                  : `${qualityLevels.find((l) => l.index === currentQuality)?.height || ''}p`}
-              </button>
-            </div>
-          )}
+          <QualitySelector
+            qualityLevels={qualityLevels}
+            currentQuality={currentQuality}
+            isOpen={showQualityMenu}
+            onToggle={(e) => {
+              e.stopPropagation();
+              setShowSpeedMenu(false);
+              setShowQualityMenu(!showQualityMenu);
+            }}
+            onSelectQuality={changeQuality}
+          />
 
           {/* Speed Menu */}
           <div className="relative">
@@ -1621,117 +1611,20 @@ function HLSPlayer({
       )}
 
       {/* Settings Modal */}
-      {showSettingsModal && (
-        <div 
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm pointer-events-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-4 sm:p-6 w-80 max-w-[90%] max-h-[90%] shadow-2xl flex flex-col">
-            <h3 className="text-base sm:text-lg font-bold text-white mb-3 sm:mb-4 flex-shrink-0">Cài đặt Intro / Outro</h3>
-            
-            <div className="flex-1 overflow-y-auto pr-1 min-h-0 space-y-3 sm:space-y-4 mb-4">
-              <div>
-                <label className="block text-xs sm:text-sm text-zinc-400 mb-1">Thời điểm kết thúc Intro (giây)</label>
-                <input 
-                  type="number" 
-                  value={movieSettings.introDuration} 
-                  onChange={e => setMovieSettings(s => ({ ...s, introDuration: Number(e.target.value) }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 sm:py-2 text-sm text-white outline-none focus:border-red-500"
-                  min="0"
-                />
-                <p className="text-[10px] sm:text-xs text-zinc-500 mt-1">Nút Bỏ qua Intro sẽ tua đến số giây này.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs sm:text-sm text-zinc-400 mb-1">Thời lượng Outro (giây)</label>
-                <input 
-                  type="number" 
-                  value={movieSettings.outroDuration} 
-                  onChange={e => setMovieSettings(s => ({ ...s, outroDuration: Number(e.target.value) }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 sm:py-2 text-sm text-white outline-none focus:border-red-500"
-                  min="0"
-                />
-                <p className="text-[10px] sm:text-xs text-zinc-500 mt-1">Nút Tập tiếp theo sẽ hiện khi phim còn lại chừng này giây.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs sm:text-sm text-zinc-400 mb-1">Thời gian Tua tới/lui (giây)</label>
-                <input 
-                  type="number" 
-                  value={playerSettings.skipDuration} 
-                  onChange={e => setPlayerSettings(s => ({ ...s, skipDuration: Number(e.target.value) }))}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 sm:py-2 text-sm text-white outline-none focus:border-red-500"
-                  min="5"
-                  step="5"
-                />
-                <p className="text-[10px] sm:text-xs text-zinc-500 mt-1">Sử dụng khi nhấp đúp hoặc bấm nút tua.</p>
-              </div>
-
-              <div className="pt-2 border-t border-zinc-800">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <label className="block text-xs sm:text-sm text-zinc-300 font-medium">Tự động bỏ qua quảng cáo</label>
-                    <p className="text-[10px] sm:text-xs text-zinc-500">Tự động tua qua khi phát hiện đoạn quảng cáo chèn</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleAutoSkipAds(!autoSkipAds)}
-                    className={cn(
-                      "w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer",
-                      autoSkipAds ? "bg-red-600" : "bg-zinc-700"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "bg-white w-4 h-4 rounded-full shadow-md transform transition-transform",
-                        autoSkipAds ? "translate-x-5" : "translate-x-0"
-                      )}
-                    />
-                  </button>
-                </div>
-              </div>
-
-              {linkEmbed && onSwitchIframe && (
-                <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-                  <div>
-                    <label className="block text-xs sm:text-sm text-zinc-300 font-medium">Nguồn phát Iframe</label>
-                    <p className="text-[10px] sm:text-xs text-zinc-500">Dự phòng khi iOS/Safari không phát được HLS</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowSettingsModal(false);
-                      onSwitchIframe('Chuyển từ Cài đặt');
-                    }}
-                    className="px-2.5 py-1 bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 border border-yellow-500/40 rounded text-xs font-semibold cursor-pointer transition-colors"
-                  >
-                    Dùng Iframe
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-3 justify-end flex-shrink-0 border-t border-zinc-800 pt-3">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setShowSettingsModal(false); }} 
-                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm rounded text-zinc-300 hover:text-white transition-colors"
-              >Hủy</button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); saveSettings(movieSettings, playerSettings); }} 
-                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded font-medium transition-colors"
-              >Lưu</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <VideoSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        movieSettings={movieSettings}
+        playerSettings={playerSettings}
+        onSaveSettings={saveSettings}
+        autoSkipAds={autoSkipAds}
+        onToggleAutoSkipAds={toggleAutoSkipAds}
+        linkEmbed={linkEmbed}
+        onSwitchIframe={onSwitchIframe}
+      />
 
       {/* Toast thông báo đã tự động bỏ qua quảng cáo */}
-      {adSkippedToast && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-zinc-900/95 border border-yellow-500/40 text-yellow-300 px-4 py-2 rounded-full font-medium text-xs sm:text-sm shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-300 pointer-events-none">
-          <Zap className="w-4 h-4 fill-current text-yellow-400 animate-pulse" />
-          <span>{adSkippedToast}</span>
-        </div>
-      )}
+      <AdSkippedToast message={adSkippedToast} />
 
       {/* Center play and skip buttons */}
       {(showControls || !isPlaying) && !isLoading && (
@@ -1772,26 +1665,19 @@ function HLSPlayer({
       {/* Smart Action Buttons (Skip Intro & Next Episode & Skip Ad) */}
       <div className="absolute bottom-24 right-4 sm:right-6 flex flex-col gap-3 items-end z-20 pointer-events-none">
         {/* Nút bỏ qua quảng cáo khi user không bật autoSkip */}
-        {activeAdInfo && !autoSkipAds && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (videoRef.current) {
-                videoRef.current.currentTime = activeAdInfo.end + 0.1;
-                setActiveAdInfo(null);
-                setAdSkippedToast('⚡ Đã bỏ qua quảng cáo');
-                setTimeout(() => setAdSkippedToast(null), 2500);
-              }
-            }}
-            className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-zinc-950 font-bold px-4 py-2.5 rounded-xl shadow-2xl transition-all hover:scale-105 active:scale-95 border-2 border-yellow-200 pointer-events-auto flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-300 cursor-pointer"
-          >
-            <FastForward className="w-4 h-4 fill-current" />
-            <span>Bỏ qua quảng cáo</span>
-            <span className="bg-black/20 text-xs px-1.5 py-0.5 rounded font-mono">
-              {Math.max(0, Math.ceil(activeAdInfo.end - currentTime))}s
-            </span>
-          </button>
-        )}
+        <AdSkipOverlay
+          activeAdInfo={activeAdInfo}
+          autoSkipAds={autoSkipAds}
+          currentTime={currentTime}
+          onSkipAd={() => {
+            if (videoRef.current && activeAdInfo) {
+              videoRef.current.currentTime = activeAdInfo.end + 0.1;
+              setActiveAdInfo(null);
+              setAdSkippedToast('⚡ Đã bỏ qua quảng cáo');
+              setTimeout(() => setAdSkippedToast(null), 2500);
+            }
+          }}
+        />
         {showSkipIntro && (
           <button
             onClick={(e) => { e.stopPropagation(); handleSkipIntro(); }}
@@ -1865,7 +1751,8 @@ function HLSPlayer({
               );
             })}
             <div
-              className="h-full bg-red-600 rounded-full relative transition-all z-20"
+              ref={progressFillRef}
+              className="h-full bg-red-600 rounded-full relative z-20"
               style={{ width: `${progress}%` }}
             >
               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-red-500 rounded-full shadow-lg opacity-0 group-hover/progress:opacity-100 transition-opacity" />
@@ -1902,7 +1789,7 @@ function HLSPlayer({
                 />
               </div>
             </div>
-            <span className="text-xs text-zinc-300 font-mono">
+            <span ref={timeDisplayRef} className="text-xs text-zinc-300 font-mono">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
           </div>
@@ -1957,22 +1844,29 @@ function VideoPreview({ url, time, isActive }: { url: string; time: number; isAc
     const video = videoRef.current;
     if (!video) return;
 
+    let isCancelled = false;
     let hls: Hls | null = null;
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        maxBufferLength: 1,
-        maxMaxBufferLength: 2,
-        enableWorker: true,
-        startLevel: 0,
-        capLevelToPlayerSize: true,
-      });
-      hls.loadSource(url);
-      hls.attachMedia(video);
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = url;
-    }
+
+    import('hls.js').then((HlsModule) => {
+      if (isCancelled) return;
+      const Hls = HlsModule.default;
+      if (Hls.isSupported()) {
+        hls = new Hls({
+          maxBufferLength: 1,
+          maxMaxBufferLength: 2,
+          enableWorker: true,
+          startLevel: 0,
+          capLevelToPlayerSize: true,
+        });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+      }
+    });
 
     return () => {
+      isCancelled = true;
       hls?.destroy();
       if (video) {
         video.removeAttribute('src');
@@ -2030,6 +1924,7 @@ function IframePlayer({
         className="w-full h-full border-0"
         allowFullScreen
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
         referrerPolicy="no-referrer-when-downgrade"
       />
       {/* Top Bar của Iframe Player: Luôn hiện badge nguồn & nút chuyển về HLS nếu có */}
@@ -2039,7 +1934,9 @@ function IframePlayer({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
           </span>
-          <span className="font-medium text-[11px] sm:text-xs">Nguồn Iframe (Dự phòng)</span>
+          <span className="font-medium text-[11px] sm:text-xs">
+            {fallbackReason ? `Iframe: ${fallbackReason}` : isFallback ? 'Nguồn Iframe (Dự phòng)' : 'Nguồn Iframe'}
+          </span>
         </div>
 
         {onRetryM3u8 && (

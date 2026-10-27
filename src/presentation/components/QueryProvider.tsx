@@ -2,7 +2,6 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import HistoryAutoSync from '@/presentation/components/HistoryAutoSync';
 
 export default function QueryProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -20,7 +19,6 @@ export default function QueryProvider({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <HistoryAutoSync />
       {children}
     </QueryClientProvider>
   );

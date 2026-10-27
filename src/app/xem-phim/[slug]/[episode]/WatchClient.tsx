@@ -46,12 +46,29 @@ export default function WatchClient({
   }, [movie, extraSources]);
 
   const [currentEpisodeSlug, setCurrentEpisodeSlug] = useState(episode);
+  const [prevEpisodeProp, setPrevEpisodeProp] = useState(episode);
   const [selectedServerName, setSelectedServerName] = useState<string | undefined>(undefined);
 
-  // Sync state if episode prop changes (e.g. from back/forward buttons or direct navigation)
-  useEffect(() => {
+  // Sync state cleanly when episode prop changes
+  if (prevEpisodeProp !== episode) {
+    setPrevEpisodeProp(episode);
     setCurrentEpisodeSlug(episode);
-  }, [episode]);
+  }
+
+  // Lắng nghe sự kiện popstate khi người dùng bấm Back / Forward trên trình duyệt
+  useEffect(() => {
+    const handlePopState = () => {
+      const segments = window.location.pathname.split('/').filter(Boolean);
+      // Format: /xem-phim/[slug]/[episode]
+      const epSegment = segments[2];
+      if (epSegment) {
+        setCurrentEpisodeSlug(decodeURIComponent(epSegment));
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const streamInfo = useStreamLink(combinedMovie, currentEpisodeSlug, selectedServerName);
 
@@ -83,20 +100,6 @@ export default function WatchClient({
     }
   };
 
-  // Next episode logic
-  let nextEpisodeSlug: string | null = null;
-  if (combinedMovie?.servers) {
-    for (const server of combinedMovie.servers) {
-      const idx = server.episodes.findIndex(
-        (e) => isEpisodeMatch(e.slug, currentEpisodeSlug) || isEpisodeMatch(e.name, currentEpisodeSlug)
-      );
-      if (idx !== -1 && idx < server.episodes.length - 1) {
-        nextEpisodeSlug = server.episodes[idx + 1].slug;
-        break;
-      }
-    }
-  }
-
   // Active server and episode indexes
   const activeServerName = selectedServerName || streamInfo?.serverName || combinedMovie?.servers?.[0]?.serverName;
   const serverIndex = combinedMovie?.servers
@@ -112,6 +115,22 @@ export default function WatchClient({
         )
       )
     : 0;
+
+  // Next episode logic - Ưu tiên tìm trong server đang xem trước
+  let nextEpisodeSlug: string | null = null;
+  if (currentServer?.episodes && episodeIndex >= 0 && episodeIndex < currentServer.episodes.length - 1) {
+    nextEpisodeSlug = currentServer.episodes[episodeIndex + 1].slug;
+  } else if (combinedMovie?.servers) {
+    for (const server of combinedMovie.servers) {
+      const idx = server.episodes.findIndex(
+        (e) => isEpisodeMatch(e.slug, currentEpisodeSlug) || isEpisodeMatch(e.name, currentEpisodeSlug)
+      );
+      if (idx !== -1 && idx < server.episodes.length - 1) {
+        nextEpisodeSlug = server.episodes[idx + 1].slug;
+        break;
+      }
+    }
+  }
 
   if (isMovieLoading) {
     return (
