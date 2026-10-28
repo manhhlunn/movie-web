@@ -19,11 +19,13 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
   const initialSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.svg';
   const [imgSrc, setImgSrc] = useState(initialSrc);
   const [prevInitial, setPrevInitial] = useState(initialSrc);
+  const [retryCount, setRetryCount] = useState(0);
 
   // Sync state cleanly if movie prop changes without triggering useEffect churn
   if (prevInitial !== initialSrc) {
     setPrevInitial(initialSrc);
     setImgSrc(initialSrc);
+    setRetryCount(0);
   }
 
   const effectiveSource = movie.source || propsSource;
@@ -36,31 +38,49 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
     ? Math.min(100, Math.max(3, Math.round((movie.lastTime / movie.lastDuration) * 100)))
     : 0;
 
+  const handleImageError = () => {
+    if (imgSrc !== movie.thumbUrl && movie.thumbUrl) {
+      setImgSrc(movie.thumbUrl);
+      return;
+    }
+    if (retryCount === 0) {
+      setRetryCount(1);
+      setTimeout(() => {
+        setImgSrc(initialSrc);
+      }, 1200);
+      return;
+    }
+    if (imgSrc !== '/placeholder-poster.svg') {
+      setImgSrc('/placeholder-poster.svg');
+    }
+  };
+
   return (
     <div
       className={cn(
         'group relative flex-shrink-0 cursor-pointer rounded-lg overflow-hidden bg-zinc-900',
         'transition-transform duration-300 hover:scale-105 hover:z-30 hover:shadow-2xl hover:shadow-black/70',
-        '[content-visibility:auto] [contain-intrinsic-size:170px_255px]',
+
         className || 'w-full'
       )}
     >
       <Link href={href} prefetch={false} className="block">
-        <div className="relative w-full aspect-[2/3] overflow-hidden">
+        <div className="relative w-full aspect-[2/3] overflow-hidden bg-zinc-800">
           <Image
             src={imgSrc}
             alt={movie.name}
             fill
             sizes="(max-width: 640px) 170px, (max-width: 1024px) 230px, 260px"
             quality={75}
+            referrerPolicy="no-referrer"
             className="object-cover transition-transform duration-500 group-hover:scale-110"
-            onError={() => {
-              if (imgSrc !== movie.thumbUrl && movie.thumbUrl) {
-                setImgSrc(movie.thumbUrl);
-              } else if (imgSrc !== '/placeholder-poster.svg') {
-                setImgSrc('/placeholder-poster.svg');
-              }
-            }}
+            onError={handleImageError}
+
+
+
+
+
+
           />
 
           {/* Quality badge */}
