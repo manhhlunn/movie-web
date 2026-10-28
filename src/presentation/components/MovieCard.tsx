@@ -40,7 +40,8 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
     <div
       className={cn(
         'group relative flex-shrink-0 cursor-pointer rounded-lg overflow-hidden bg-zinc-900',
-        'transition-all duration-300 hover:scale-105 hover:z-30 hover:shadow-2xl hover:shadow-black/70',
+        'transition-transform duration-300 hover:scale-105 hover:z-30 hover:shadow-2xl hover:shadow-black/70',
+        '[content-visibility:auto] [contain-intrinsic-size:170px_255px]',
         className || 'w-full'
       )}
     >
@@ -52,7 +53,7 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
             fill
             sizes="(max-width: 640px) 170px, (max-width: 1024px) 230px, 260px"
             quality={75}
-            className="object-cover transition-all duration-500 group-hover:scale-110"
+            className="object-cover transition-transform duration-500 group-hover:scale-110"
             onError={() => {
               if (imgSrc !== movie.thumbUrl && movie.thumbUrl) {
                 setImgSrc(movie.thumbUrl);
@@ -74,7 +75,7 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
           {/* Episode badge */}
           {movie.episodeCurrent && (
             <div className="absolute top-1.5 right-1.5 z-10">
-              <span className="px-1.5 py-0.5 bg-black/75 backdrop-blur-md text-[10px] font-bold text-white rounded-[4px] shadow max-w-[72px] truncate block">
+              <span className="px-1.5 py-0.5 bg-black/85 border border-white/10 text-[10px] font-bold text-white rounded-[4px] shadow max-w-[72px] truncate block">
                 {movie.episodeCurrent}
               </span>
             </div>
@@ -83,7 +84,7 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
           {/* Always-visible title with blur backdrop */}
           <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black via-black/80 to-transparent z-10" />
           <div className="absolute inset-x-0 bottom-0 px-2.5 pb-2.5 z-20 transition-opacity duration-300 group-hover:opacity-0">
-            <h3 className="text-[13px] sm:text-[15px] font-bold text-white leading-snug line-clamp-2 drop-shadow-lg">
+            <h3 className="text-[13px] sm:text-[15px] font-bold text-white leading-snug line-clamp-2">
               {movie.name}
             </h3>
           </div>
@@ -128,7 +129,7 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
                   </span>
                 )}
                 {movie.lang && (
-                  <span className="px-1.5 py-0.5 bg-white/15 backdrop-blur-sm text-[9px] font-semibold text-white rounded">
+                  <span className="px-1.5 py-0.5 bg-white/15 text-[9px] font-semibold text-white rounded">
                     {movie.lang}
                   </span>
                 )}
