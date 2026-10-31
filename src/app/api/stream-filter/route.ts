@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 function isAdSegment(line: string): boolean {
   if (!line) return false;
   const clean = line.trim();
@@ -193,7 +195,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const response = await fetch(targetUrl, {
+    let response = await fetch(targetUrl, {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -203,6 +205,22 @@ export async function GET(request: NextRequest) {
       next: { revalidate: 3600 },
       signal: AbortSignal.timeout(10000),
     });
+
+    if (!response.ok && (response.status === 403 || response.status === 404)) {
+      try {
+        const retryRes = await fetch(targetUrl, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            Accept: '*/*',
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (retryRes.ok) {
+          response = retryRes;
+        }
+      } catch {}
+    }
 
     if (!response.ok) {
       return new NextResponse(`Failed to fetch upstream m3u8: ${response.status}`, {

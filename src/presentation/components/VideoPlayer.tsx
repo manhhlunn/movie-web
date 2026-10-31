@@ -666,6 +666,11 @@ function HLSPlayer({
           return;
         }
         console.warn('[VideoPlayer] Native Safari HLS error:', video.error);
+        if (linkEmbed && onSwitchIframe) {
+          console.warn('[VideoPlayer] iOS Safari HLS và proxy đều không thể phát, tự động chuyển sang Iframe...');
+          onSwitchIframe('Nguồn trực tiếp không tương thích với Safari iOS');
+          return;
+        }
         setIsLoading(false);
         setHasError(true);
         setErrorMessage('Thiết bị iOS/Safari không thể phát trực tiếp nguồn video này (CORS hoặc định dạng không hỗ trợ). Vui lòng chọn nguồn khác hoặc bấm "Dùng Iframe Dự Phòng".');
@@ -1905,6 +1910,7 @@ function IframePlayer({
   onRetryM3u8?: () => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const safeUrl = (url || '').replace(/^http:\/\//i, 'https://');
 
   useEffect(() => {
     const el = iframeRef.current;
@@ -1919,12 +1925,13 @@ function IframePlayer({
     <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden group">
       <iframe
         ref={iframeRef}
-        src={url}
+        key={safeUrl}
+        src={safeUrl}
         title={title || 'Video player'}
         className="w-full h-full border-0"
         allowFullScreen
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+        loading="eager"
         referrerPolicy="no-referrer-when-downgrade"
       />
       {/* Top Bar của Iframe Player: Luôn hiện badge nguồn & nút chuyển về HLS nếu có */}
@@ -1956,7 +1963,7 @@ function IframePlayer({
       <div className="absolute top-3 right-3 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-20 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-zinc-300 pointer-events-auto">
         <span className="font-medium text-zinc-400 hidden xs:inline">Nguồn Iframe</span>
         <a
-          href={url}
+          href={safeUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1 text-red-400 hover:text-red-300 font-bold ml-1 transition-colors"
