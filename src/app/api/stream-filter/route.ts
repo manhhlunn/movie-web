@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const dynamic = 'force-dynamic';
+
 
 function isAdSegment(line: string): boolean {
   if (!line) return false;
