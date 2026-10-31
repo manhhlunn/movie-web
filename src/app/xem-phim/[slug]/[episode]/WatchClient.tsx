@@ -3,7 +3,16 @@
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { useMovieDetails, useStreamLink, useMovieExtraSources } from '@/presentation/hooks/useMovies';
-import VideoPlayer from '@/presentation/components/VideoPlayer';
+import dynamic from 'next/dynamic';
+
+const VideoPlayer = dynamic(() => import('@/presentation/components/VideoPlayer'), {
+  ssr: false,
+  loading: () => (
+    <div className="relative w-full aspect-video bg-zinc-900 rounded-xl flex items-center justify-center animate-pulse">
+      <div className="w-10 h-10 rounded-full border-2 border-red-500/20 border-t-red-500 animate-spin" />
+    </div>
+  ),
+});
 import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
