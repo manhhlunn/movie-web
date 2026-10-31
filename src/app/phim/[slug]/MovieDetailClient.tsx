@@ -283,7 +283,7 @@ export default function MovieDetailClient({
                 </h3>
                 <div className="relative w-full aspect-video rounded-2xl overflow-hidden shadow-2xl border border-zinc-800 bg-black">
                   <iframe
-                    src={`https://www.youtube.com/embed/${getYouTubeEmbedId(movie.trailerUrl)}?rel=0&modestbranding=1`}
+                    src={`https://www.youtube-nocookie.com/embed/${getYouTubeEmbedId(movie.trailerUrl)}?rel=0&modestbranding=1`}
                     className="absolute inset-0 w-full h-full"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen

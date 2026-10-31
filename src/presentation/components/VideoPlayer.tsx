@@ -1931,7 +1931,7 @@ function IframePlayer({
         className="w-full h-full border-0"
         allowFullScreen
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-        loading="eager"
+        loading="lazy"
         referrerPolicy="no-referrer-when-downgrade"
       />
       {/* Top Bar của Iframe Player: Luôn hiện badge nguồn & nút chuyển về HLS nếu có */}
