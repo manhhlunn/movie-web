@@ -219,7 +219,9 @@ export async function GET(request: NextRequest) {
         if (retryRes.ok) {
           response = retryRes;
         }
-      } catch {}
+      } catch (err: unknown) {
+        console.warn('[StreamFilter] Retry upstream failed:', err);
+      }
     }
 
     if (!response.ok) {

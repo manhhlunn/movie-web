@@ -73,14 +73,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/stream/filter',
-        destination: '/api/stream-filter',
-      },
-    ];
-  },
   async headers() {
     return [
       {
