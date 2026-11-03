@@ -96,7 +96,10 @@ export default function EpisodeList({
                   isEpisodeMatch(ep.name, currentEpisodeSlug);
 
                 const isActive = isMatchSlug && server.serverName === activeServerName;
-                const href = `/xem-phim/${movieSlug}/${ep.slug}${sourceParam ? `?source=${sourceParam}` : ''}`;
+                const epParams = new URLSearchParams();
+                if (sourceParam) epParams.set('source', sourceParam);
+                epParams.set('server', String(si));
+                const href = `/xem-phim/${movieSlug}/${ep.slug}?${epParams.toString()}`;
 
                 return (
                   <Link

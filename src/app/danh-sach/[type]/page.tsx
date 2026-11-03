@@ -5,7 +5,6 @@ import { getExploreMovies } from '@/application/useCases/MovieUseCases';
 
 interface Props {
   params: Promise<{ type: string }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 

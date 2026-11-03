@@ -152,7 +152,17 @@ export function resolveStreamLink(
   if (serverName) {
     const targetServer = movie.servers.find((s) => s.serverName === serverName);
     if (targetServer) {
-      const ep = targetServer.episodes.find((e) => matchEpisodeSlug(e.slug, e.name, episodeSlug));
+      let ep = targetServer.episodes.find((e) => matchEpisodeSlug(e.slug, e.name, episodeSlug));
+      if (!ep) {
+        const numMatch = episodeSlug.match(/\d+/);
+        if (numMatch) {
+          const num = parseInt(numMatch[0], 10);
+          ep = targetServer.episodes.find((e) => {
+            const epNum = e.name.match(/\d+/) || e.slug.match(/\d+/);
+            return epNum && parseInt(epNum[0], 10) === num;
+          });
+        }
+      }
       if (ep) {
         return {
           linkM3u8: ep.linkM3u8 || '',

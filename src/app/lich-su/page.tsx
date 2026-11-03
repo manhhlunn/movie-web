@@ -8,6 +8,7 @@ import MovieCard from '@/presentation/components/MovieCard';
 import { Clock, Home, Trash2, Cloud, HardDrive } from 'lucide-react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { normalizeImageUrl } from '@/lib/utils';
 
 export default function HistoryPage() {
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -29,8 +30,8 @@ export default function HistoryPage() {
             slug: item.slug,
             originName: '',
             type: 'single',
-            posterUrl: item.poster_url || item.posterUrl || '',
-            thumbUrl: item.thumb_url || item.thumbUrl || item.poster_url || '',
+            posterUrl: normalizeImageUrl(item.poster_url || item.posterUrl || item.thumb_url || item.thumbUrl),
+            thumbUrl: normalizeImageUrl(item.thumb_url || item.thumbUrl || item.poster_url || item.posterUrl),
             year: 0,
             quality: 'HD',
             lang: '',
@@ -65,7 +66,12 @@ export default function HistoryPage() {
 
       // CHƯA NHẬP ID: Chỉ lấy lịch sử cục bộ từ localStorage
       const local = getHistory();
-      setMovies(local);
+      const normalizedLocal = local.map((m) => ({
+        ...m,
+        posterUrl: normalizeImageUrl(m.posterUrl || m.thumbUrl),
+        thumbUrl: normalizeImageUrl(m.thumbUrl || m.posterUrl),
+      }));
+      setMovies(normalizedLocal);
     };
 
     loadHistory();

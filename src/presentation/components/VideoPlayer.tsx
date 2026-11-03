@@ -239,8 +239,26 @@ function HLSPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const saved = localStorage.getItem('player-muted');
+      return saved !== null ? saved === 'true' : false;
+    } catch {
+      return false;
+    }
+  });
+  const [volume, setVolume] = useState(() => {
+    if (typeof window === 'undefined') return 1;
+    try {
+      const saved = localStorage.getItem('player-volume');
+      if (saved !== null) {
+        const v = parseFloat(saved);
+        if (!isNaN(v)) return v;
+      }
+    } catch {}
+    return 1;
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -249,7 +267,15 @@ function HLSPlayer({
   const [retryCount, setRetryCount] = useState(0);
 
   // Auto skip ads states
-  const [autoSkipAds, setAutoSkipAds] = useState(true);
+  const [autoSkipAds, setAutoSkipAds] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const saved = localStorage.getItem('player-autoskip-ads');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
   const [adSkippedToast, setAdSkippedToast] = useState<string | null>(null);
   const [adRanges, setAdRanges] = useState<{ start: number; end: number; duration: number }[]>([]);
   const [activeAdInfo, setActiveAdInfo] = useState<{ start: number; end: number; duration: number } | null>(null);
@@ -324,47 +350,43 @@ function HLSPlayer({
   const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>([]);
   const [currentQuality, setCurrentQuality] = useState<number>(-1);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
-  const [isPiPSupported, setIsPiPSupported] = useState(false);
+  const [isPiPSupported] = useState(() => {
+    return typeof document !== 'undefined' && 'pictureInPictureEnabled' in document;
+  });
   
   // Custom intro/outro settings per movie
-  const [movieSettings, setMovieSettings] = useState<{ introDuration: number; outroDuration: number }>({
-    introDuration: 45,
-    outroDuration: 120,
+  const [movieSettings, setMovieSettings] = useState<{ introDuration: number; outroDuration: number }>(() => {
+    if (typeof window === 'undefined' || !movieSlug) return { introDuration: 45, outroDuration: 120 };
+    try {
+      const savedMovie = localStorage.getItem(`movie-settings-${movieSlug}`);
+      if (savedMovie) return JSON.parse(savedMovie);
+    } catch {}
+    return { introDuration: 45, outroDuration: 120 };
   });
-  const [playerSettings, setPlayerSettings] = useState<{ skipDuration: number }>({
-    skipDuration: 10,
+
+  const [playerSettings, setPlayerSettings] = useState<{ skipDuration: number }>(() => {
+    if (typeof window === 'undefined') return { skipDuration: 10 };
+    try {
+      const savedPlayer = localStorage.getItem('player-settings');
+      if (savedPlayer) return JSON.parse(savedPlayer);
+    } catch {}
+    return { skipDuration: 10 };
   });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
-  // Khôi phục cài đặt từ localStorage trên client sau khi hydrate (tránh lỗi React Hydration #418)
-  useEffect(() => {
-    try {
-      if (typeof document !== 'undefined' && 'pictureInPictureEnabled' in document) {
-        setIsPiPSupported(true);
-      }
-      const savedMuted = localStorage.getItem('player-muted');
-      if (savedMuted !== null) {
-        setIsMuted(savedMuted === 'true');
-      }
-      const savedVolume = localStorage.getItem('player-volume');
-      if (savedVolume !== null) {
-        const v = parseFloat(savedVolume);
-        if (!isNaN(v)) setVolume(v);
-      }
-      const savedAutoSkip = localStorage.getItem('player-autoskip-ads');
-      if (savedAutoSkip !== null) {
-        const val = savedAutoSkip === 'true';
-        setAutoSkipAds(val);
-        autoSkipAdsRef.current = val;
-      }
-      if (movieSlug) {
+  // Cập nhật cài đặt intro/outro khi chuyển phim khác (adjust state during render)
+  const [prevMovieSlug, setPrevMovieSlug] = useState(movieSlug);
+  if (movieSlug !== prevMovieSlug) {
+    setPrevMovieSlug(movieSlug);
+    let updatedMovieSettings = { introDuration: 45, outroDuration: 120 };
+    if (typeof window !== 'undefined' && movieSlug) {
+      try {
         const savedMovie = localStorage.getItem(`movie-settings-${movieSlug}`);
-        if (savedMovie) setMovieSettings(JSON.parse(savedMovie));
-      }
-      const savedPlayer = localStorage.getItem('player-settings');
-      if (savedPlayer) setPlayerSettings(JSON.parse(savedPlayer));
-    } catch {}
-  }, [movieSlug]);
+        if (savedMovie) updatedMovieSettings = JSON.parse(savedMovie);
+      } catch {}
+    }
+    setMovieSettings(updatedMovieSettings);
+  }
 
   // Apply volume / muted state to video element
   useEffect(() => {
@@ -413,6 +435,8 @@ function HLSPlayer({
 
       const progress = {
         episodeSlug,
+        serverIndex,
+        episodeIndex,
         time: video.currentTime,
         duration: video.duration || 0,
         updatedAt: Date.now(),

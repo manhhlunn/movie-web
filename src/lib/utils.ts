@@ -25,3 +25,39 @@ export function sanitizeHtml(html?: string | null): string {
   clean = clean.replace(/<(p|b|i|strong|em|span|u)\s+[^>]*>/gi, '<$1>');
   return clean;
 }
+
+/**
+ * Chuẩn hóa URL hình ảnh, đảm bảo luôn có domain đầy đủ (https://) và fallback an toàn.
+ * Xử lý các đường dẫn tương đối dạng /upload/..., upload/..., tránh timeout Next.js image.
+ */
+export function normalizeImageUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return '/placeholder-poster.svg';
+  const clean = url.trim();
+  if (!clean || clean === '/placeholder-poster.svg') return '/placeholder-poster.svg';
+  if (clean.startsWith('data:image/')) return clean;
+  if (clean.startsWith('//')) return `https:${clean}`;
+  if (clean.startsWith('http://')) return clean.replace('http://', 'https://');
+  if (clean.startsWith('https://')) return clean;
+
+  // Domain ngoài không có giao thức (ví dụ: danviet.vn/files/... hoặc cdn.domain.com/...)
+  if (/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\/.+$/.test(clean)) {
+    return `https://${clean}`;
+  }
+
+  // Xử lý các đường dẫn tương đối từ CDN phim
+  if (
+    clean.startsWith('/upload/') ||
+    clean.startsWith('/uploads/') ||
+    clean.startsWith('upload/') ||
+    clean.startsWith('uploads/')
+  ) {
+    const p = clean.startsWith('/') ? clean : `/${clean}`;
+    return `https://phimimg.com${p}`;
+  }
+
+  // File ảnh cục bộ trong thư mục public
+  if (clean.startsWith('/')) return clean;
+
+  // Tên file ảnh trần (ví dụ: "poster-123.webp")
+  return `https://phimimg.com/uploads/movies/${clean}`;
+}

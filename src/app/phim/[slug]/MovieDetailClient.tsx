@@ -9,7 +9,7 @@ import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { cn, sanitizeHtml } from '@/lib/utils';
 import { useState, useEffect } from 'react';
-import { toggleFavorite, isFavorite } from '@/lib/userStore';
+import { toggleFavorite, isFavorite, getHistory } from '@/lib/userStore';
 import { getUserId, fetchUserHistory } from '@/lib/syncHistory';
 import { getEpisodeSlugFromDetail } from '@/lib/episodeUtils';
 
@@ -41,7 +41,7 @@ export default function MovieDetailClient({
     year: movie?.year,
     type: movie?.type,
   });
-  const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number } | null>(null);
+  const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number; serverIndex?: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [loadingActorId, setLoadingActorId] = useState<number | string | null>(null);
 
@@ -72,7 +72,7 @@ export default function MovieDetailClient({
           const pos = Number(item.position) || 0;
           const sec = pos >= 1000 ? pos / 1000 : pos;
           if (targetSlug && sec > 3) {
-            setWatchProgress({ episodeSlug: targetSlug, time: sec });
+            setWatchProgress({ episodeSlug: targetSlug, time: sec, serverIndex: sIdx });
           }
         }
       });
@@ -81,8 +81,27 @@ export default function MovieDetailClient({
         const saved = localStorage.getItem(`watch-progress-${slug}`);
         if (saved) {
           try {
-            setWatchProgress(JSON.parse(saved));
+            const parsed = JSON.parse(saved);
+            let sIdx = typeof parsed.serverIndex === 'number' ? parsed.serverIndex : undefined;
+            if (sIdx === undefined) {
+              const history = getHistory();
+              const found = history.find((m) => m.slug === slug);
+              if (found && typeof found.serverIndex === 'number') {
+                sIdx = found.serverIndex;
+              }
+            }
+            setWatchProgress({ ...parsed, serverIndex: sIdx });
           } catch {}
+        } else {
+          const history = getHistory();
+          const found = history.find((m) => m.slug === slug);
+          if (found && found.lastEpisodeSlug && found.lastTime && found.lastTime > 3) {
+            setWatchProgress({
+              episodeSlug: found.lastEpisodeSlug,
+              time: found.lastTime,
+              serverIndex: found.serverIndex ?? 0,
+            });
+          }
         }
         setIsBookmarked(isFavorite(slug));
       });
@@ -235,7 +254,12 @@ export default function MovieDetailClient({
               )}
               {watchProgress && (
                 <Link
-                  href={`/xem-phim/${slug}/${watchProgress.episodeSlug}${sourceParam ? `?source=${sourceParam}` : ''}`}
+                  href={`/xem-phim/${slug}/${watchProgress.episodeSlug}?${new URLSearchParams({
+                    ...(sourceParam ? { source: sourceParam } : {}),
+                    ...(typeof watchProgress.serverIndex === 'number' && watchProgress.serverIndex >= 0
+                      ? { server: String(watchProgress.serverIndex) }
+                      : {}),
+                  }).toString()}`}
                   className="inline-flex items-center justify-center px-8 py-3.5 bg-zinc-800 text-white font-semibold rounded-lg hover:bg-zinc-700 transition-colors shadow-lg border border-zinc-700"
                 >
                   <Play className="w-5 h-5 mr-2" />

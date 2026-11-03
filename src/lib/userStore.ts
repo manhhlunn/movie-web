@@ -1,4 +1,5 @@
 import { Movie } from "@/domain/entities/Movie";
+import { normalizeImageUrl } from "@/lib/utils";
 import {
   syncWatchHistory,
   getUserId,
@@ -90,7 +91,10 @@ export const addToHistory = (
 ) => {
   const userId = getUserId();
   const movieName = movie.name || movie.movieName || '';
-  const posterUrl = movie.posterUrl || movie.thumbUrl || '';
+  const rawPoster = movie.posterUrl || movie.thumbUrl || '';
+  const rawThumb = movie.thumbUrl || movie.posterUrl || '';
+  const posterUrl = normalizeImageUrl(rawPoster);
+  const thumbUrl = normalizeImageUrl(rawThumb);
 
   // ─── NẾU CÓ NHẬP ID: CHỈ LƯU VÀO SUPABASE, KHÔNG LƯU Ở LOCAL CỦA MÁY NỮA ───
   if (userId) {
@@ -110,7 +114,7 @@ export const addToHistory = (
         duration: lastDuration ?? movie.lastDuration ?? 0,
         movieName,
         posterUrl,
-        thumbUrl: movie.thumbUrl,
+        thumbUrl,
       },
       force
     ).then((synced) => {
@@ -134,6 +138,7 @@ export const addToHistory = (
       name: movieName || existing.name,
       movieName: movieName || existing.movieName,
       posterUrl: posterUrl || existing.posterUrl,
+      thumbUrl: thumbUrl || existing.thumbUrl || posterUrl,
       source: movie.source || existing.source,
       serverIndex: serverIndex ?? existing.serverIndex ?? 0,
       episodeIndex: episodeIndex ?? existing.episodeIndex ?? 0,
@@ -143,7 +148,7 @@ export const addToHistory = (
     };
     history.splice(index, 1);
   } else {
-    const { id, name, slug, thumbUrl, quality, year, lang, episodeCurrent, source } = movie;
+    const { id, name, slug, quality, year, lang, episodeCurrent, source } = movie;
     movieToStore = { 
       id,
       name: movieName || name,
@@ -210,13 +215,5 @@ export const removeFromHistory = (slug: string) => {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('movie-history-changed'));
   }
-};
-
-/**
- * Giữ hàm tương thích ngược — các component cần lịch sử (ContinueWatching, HistoryPage, VideoPlayer)
- * đã tự lấy dữ liệu theo đúng ngữ cảnh khi mount.
- */
-export const initAutoSyncHistory = async (_force = false) => {
-  return;
 };
 

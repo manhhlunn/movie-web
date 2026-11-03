@@ -10,11 +10,13 @@ import { Suspense } from "react";
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin", "vietnamese"],
+  display: "swap",
 });
 
 const outfit = Outfit({
   variable: "--font-outfit",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -38,6 +40,14 @@ export default function RootLayout({
       suppressHydrationWarning
       data-scroll-behavior="smooth"
     >
+      <head>
+        <link rel="preconnect" href="https://phimimg.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://phimimg.com" />
+        <link rel="preconnect" href="https://img.ophim.live" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://img.ophim.live" />
+        <link rel="preconnect" href="https://image.tmdb.org" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://image.tmdb.org" />
+      </head>
       <body className="min-h-full flex flex-col bg-black text-zinc-200 font-sans">
         <QueryProvider>
           <Suspense fallback={<div className="h-20 bg-black/50" />}>

@@ -14,6 +14,24 @@ import {
 
 const DEFAULT_CDN = 'https://img.ophim.live/uploads/movies/';
 
+const TRUSTED_MEDIA_CDNS = [
+  'phimimg.com',
+  'ophim.live',
+  'ophim1.com',
+  'ophim',
+  'nguonc.com',
+  'vsmov.com',
+  'tmdb.org',
+  'googleusercontent.com',
+  'cloudinary.com',
+];
+
+export function isTrustedMediaUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const lower = url.toLowerCase();
+  return TRUSTED_MEDIA_CDNS.some((cdn) => lower.includes(cdn));
+}
+
 // ---------- helpers ----------
 
 function safeString(val: unknown, fallback = ''): string {
@@ -25,12 +43,18 @@ function safeNumber(val: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function resolveImageUrl(raw: string | undefined | null, cdn: string): string {
+export function resolveImageUrl(raw: string | undefined | null, cdn: string): string {
   if (!raw) return '';
+  raw = raw.trim();
+  if (!raw) return '';
+  if (raw.startsWith('//')) return `https:${raw}`;
   if (raw.startsWith('http://')) {
     raw = raw.replace('http://', 'https://');
   }
   if (raw.startsWith('https://')) return raw;
+  if (/^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\/.+$/.test(raw)) {
+    return `https://${raw}`;
+  }
 
   const cleanRaw = raw.startsWith('/') ? raw : `/${raw}`;
 
@@ -120,8 +144,8 @@ export function mapMovieFromList(
     ? raw.country.map((c: Record<string, unknown>) => mapCountry(c))
     : [];
 
-  const rawPosterStr = safeString(raw?.poster_url);
-  let rawThumbStr = safeString(raw?.thumb_url);
+  const rawPosterStr = safeString(raw?.poster_url).trim();
+  let rawThumbStr = safeString(raw?.thumb_url).trim();
   // PhimAPI: nếu thiếu thumb_url nhưng có poster_url dạng "-poster.", tự động suy luận "-thumb."
   if (!rawThumbStr && rawPosterStr.includes('-poster.')) {
     rawThumbStr = rawPosterStr.replace('-poster.', '-thumb.');
@@ -135,15 +159,31 @@ export function mapMovieFromList(
     rawPosterStr.includes('phimimg.com') ||
     rawThumbStr.includes('phimimg.com');
 
-  // PhimAPI: poster_url là poster dọc, thumb_url là thumb ngang
-  // OPhim (Nguồn chính): thumb_url là ảnh poster của danh sách phim
-  const posterUrl = isPhimAPI
-    ? (posterMapped || thumbMapped || '/placeholder-poster.svg')
-    : (thumbMapped || posterMapped || '/placeholder-poster.svg');
+  const posterTrusted = isTrustedMediaUrl(posterMapped);
+  const thumbTrusted = isTrustedMediaUrl(thumbMapped);
 
-  const thumbUrl = isPhimAPI
-    ? (thumbMapped || posterMapped || '/placeholder-poster.svg')
-    : (posterMapped || thumbMapped || '/placeholder-poster.svg');
+  let posterUrl: string;
+  let thumbUrl: string;
+
+  // Nếu 1 trong 2 là link ngoại lai không rõ nguồn gốc (như báo chí HTML...) và link kia là CDN chính chủ:
+  // Luôn ưu tiên dùng link CDN chính chủ để tránh lỗi net::ERR_BLOCKED_BY_ORB hoặc 404
+  if (posterTrusted && !thumbTrusted) {
+    posterUrl = posterMapped;
+    thumbUrl = posterMapped;
+  } else if (!posterTrusted && thumbTrusted) {
+    posterUrl = thumbMapped;
+    thumbUrl = thumbMapped;
+  } else {
+    // PhimAPI: poster_url là poster dọc, thumb_url là thumb ngang
+    // OPhim (Nguồn chính): thumb_url là ảnh poster của danh sách phim
+    posterUrl = isPhimAPI
+      ? (posterMapped || thumbMapped || '/placeholder-poster.svg')
+      : (thumbMapped || posterMapped || '/placeholder-poster.svg');
+
+    thumbUrl = isPhimAPI
+      ? (thumbMapped || posterMapped || '/placeholder-poster.svg')
+      : (posterMapped || thumbMapped || '/placeholder-poster.svg');
+  }
 
   return {
     id: safeString(raw?._id),
@@ -256,12 +296,15 @@ export function mapV1ListResponse(body: Record<string, unknown>): MovieListResul
  * Map NguồnC (phim.nguonc.com) movie item.
  */
 export function mapNguonCMovieFromList(raw: Record<string, unknown>): Movie {
-  const posterRaw = safeString(raw?.poster_url);
-  const thumbRaw = safeString(raw?.thumb_url);
+  const posterRaw = safeString(raw?.poster_url).trim();
+  const thumbRaw = safeString(raw?.thumb_url).trim();
+
+  const posterMapped = resolveImageUrl(posterRaw, 'https://phim.nguonc.com');
+  const thumbMapped = resolveImageUrl(thumbRaw, 'https://phim.nguonc.com');
 
   // Nguồn C dùng poster ở field thumb_url
-  const posterUrl = thumbRaw || posterRaw || '/placeholder-poster.svg';
-  const thumbUrl = posterRaw || thumbRaw || '/placeholder-poster.svg';
+  const posterUrl = thumbMapped || posterMapped || '/placeholder-poster.svg';
+  const thumbUrl = posterMapped || thumbMapped || '/placeholder-poster.svg';
 
   let categories: Category[] = [];
   let countries: Country[] = [];

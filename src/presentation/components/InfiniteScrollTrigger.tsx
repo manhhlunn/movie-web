@@ -31,10 +31,10 @@ export default function InfiniteScrollTrigger({
     fetchNextPage();
     setTimeout(() => {
       isTriggeringRef.current = false;
-    }, 250);
+    }, 600);
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage]);
 
-  // 1. IntersectionObserver với margin lớn (1200px) để đón đầu khi user cuộn nhanh
+  // 1. IntersectionObserver tải trang tiếp theo khi user cuộn gần tới cuối (khoảng 400px)
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el || !hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
@@ -45,15 +45,14 @@ export default function InfiniteScrollTrigger({
           triggerFetch();
         }
       },
-      { rootMargin: '1200px 0px 1200px 0px' }
+      { rootMargin: '400px 0px 400px 0px' }
     );
 
     observer.observe(el);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, triggerFetch]);
 
-  // 2. Window Scroll fallback: Khi user vuốt rất nhanh (momentum scroll), browser có thể drop frame
-  // hoặc element đã nằm sẵn trong viewport mà không kích hoạt transition mới.
+  // 2. Window Scroll fallback: Khi user vuốt rất nhanh (momentum scroll)
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
 
@@ -66,8 +65,7 @@ export default function InfiniteScrollTrigger({
             return;
           }
           const rect = sentinelRef.current.getBoundingClientRect();
-          // Khi sentinel cách đáy màn hình dưới 1200px -> kích hoạt tải trước
-          if (rect.top <= window.innerHeight + 1200) {
+          if (rect.top <= window.innerHeight + 400) {
             triggerFetch();
           }
           ticking = false;
@@ -77,23 +75,8 @@ export default function InfiniteScrollTrigger({
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
-    // Kiểm tra ngay khi mount
-    handleScroll();
-
     return () => window.removeEventListener('scroll', handleScroll);
   }, [hasNextPage, isFetchingNextPage, isFetchNextPageError, triggerFetch]);
-
-  // 3. Tự động kiểm tra ngay sau khi một trang vừa tải xong:
-  // Nếu trang vừa tải xong mà sentinel vẫn còn nằm trong tầm nhìn (user đang chờ ở cuối trang),
-  // tự động tải tiếp luôn mà KHÔNG bắt user phải vuốt lên rồi vuốt xuống!
-  useEffect(() => {
-    if (!isFetchingNextPage && hasNextPage && !isFetchNextPageError && sentinelRef.current) {
-      const rect = sentinelRef.current.getBoundingClientRect();
-      if (rect.top <= window.innerHeight + 1000) {
-        triggerFetch();
-      }
-    }
-  }, [isFetchingNextPage, hasNextPage, isFetchNextPageError, triggerFetch]);
 
   return (
     <div className="w-full">

@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Play, Clock, Film, Star } from 'lucide-react';
 import { Movie } from '@/domain/entities/Movie';
-import { cn } from '@/lib/utils';
+import { cn, normalizeImageUrl } from '@/lib/utils';
 
 interface MovieCardProps {
   movie: Movie;
@@ -16,38 +16,42 @@ interface MovieCardProps {
 }
 
 const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl }: MovieCardProps) => {
-  const initialSrc = movie.posterUrl || movie.thumbUrl || '/placeholder-poster.svg';
+  const initialSrc = normalizeImageUrl(movie.posterUrl || movie.thumbUrl);
   const [imgSrc, setImgSrc] = useState(initialSrc);
   const [prevInitial, setPrevInitial] = useState(initialSrc);
-  const [retryCount, setRetryCount] = useState(0);
 
   // Sync state cleanly if movie prop changes without triggering useEffect churn
   if (prevInitial !== initialSrc) {
     setPrevInitial(initialSrc);
     setImgSrc(initialSrc);
-    setRetryCount(0);
   }
 
   const effectiveSource = movie.source || propsSource;
   const hasProgress = !!movie.lastEpisodeSlug;
+
+  const watchParams = new URLSearchParams();
+  if (effectiveSource) watchParams.set('source', effectiveSource);
+  if (typeof movie.serverIndex === 'number' && movie.serverIndex >= 0) {
+    watchParams.set('server', String(movie.serverIndex));
+  }
+  const watchQuery = watchParams.toString() ? `?${watchParams.toString()}` : '';
+
+  const detailParams = new URLSearchParams();
+  if (effectiveSource) detailParams.set('source', effectiveSource);
+  const detailQuery = detailParams.toString() ? `?${detailParams.toString()}` : '';
+
   const href = (preferWatchUrl && hasProgress)
-    ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}${effectiveSource ? `?source=${effectiveSource}` : ''}`
-    : `/phim/${movie.slug}${effectiveSource ? `?source=${effectiveSource}` : ''}`;
+    ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}${watchQuery}`
+    : `/phim/${movie.slug}${detailQuery}`;
 
   const percent = (movie.lastTime && movie.lastDuration && movie.lastDuration > 0)
     ? Math.min(100, Math.max(3, Math.round((movie.lastTime / movie.lastDuration) * 100)))
     : 0;
 
   const handleImageError = () => {
-    if (imgSrc !== movie.thumbUrl && movie.thumbUrl) {
-      setImgSrc(movie.thumbUrl);
-      return;
-    }
-    if (retryCount === 0) {
-      setRetryCount(1);
-      setTimeout(() => {
-        setImgSrc(initialSrc);
-      }, 1200);
+    const fallback = normalizeImageUrl(movie.thumbUrl);
+    if (imgSrc !== fallback && fallback !== '/placeholder-poster.svg') {
+      setImgSrc(fallback);
       return;
     }
     if (imgSrc !== '/placeholder-poster.svg') {
@@ -60,7 +64,6 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
       className={cn(
         'group relative flex-shrink-0 cursor-pointer rounded-lg overflow-hidden bg-zinc-900',
         'transition-transform duration-300 hover:scale-105 hover:z-30 hover:shadow-2xl hover:shadow-black/70',
-
         className || 'w-full'
       )}
     >
@@ -70,17 +73,12 @@ const MovieCard = memo(({ movie, className, source: propsSource, preferWatchUrl 
             src={imgSrc}
             alt={movie.name}
             fill
+            unoptimized
             sizes="(max-width: 640px) 170px, (max-width: 1024px) 230px, 260px"
             quality={75}
             referrerPolicy="no-referrer"
             className="object-cover transition-transform duration-500 group-hover:scale-110"
             onError={handleImageError}
-
-
-
-
-
-
           />
 
           {/* Quality badge */}

@@ -8,6 +8,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Play, X } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { normalizeImageUrl } from '@/lib/utils';
 
 function formatEpisodeDisplay(slug?: string | null): string {
   if (!slug) return '';
@@ -39,8 +40,8 @@ export default function ContinueWatching() {
             slug: item.slug,
             originName: '',
             type: 'single',
-            posterUrl: item.poster_url || item.posterUrl || '',
-            thumbUrl: item.thumb_url || item.thumbUrl || item.poster_url || '',
+            posterUrl: normalizeImageUrl(item.poster_url || item.posterUrl || item.thumb_url || item.thumbUrl),
+            thumbUrl: normalizeImageUrl(item.thumb_url || item.thumbUrl || item.poster_url || item.posterUrl),
             year: 0,
             quality: 'HD',
             lang: '',
@@ -75,7 +76,12 @@ export default function ContinueWatching() {
 
       // Chưa nhập ID: Lấy lịch sử từ localStorage
       const data = getHistory();
-      setHistory(data.slice(0, 12));
+      const normalizedData = data.map((m) => ({
+        ...m,
+        posterUrl: normalizeImageUrl(m.posterUrl || m.thumbUrl),
+        thumbUrl: normalizeImageUrl(m.thumbUrl || m.posterUrl),
+      }));
+      setHistory(normalizedData.slice(0, 12));
     };
 
     const handleVisibilityChange = () => {
@@ -117,10 +123,20 @@ export default function ContinueWatching() {
         >
           {history.map((movie) => {
             const hasProgress = !!movie.lastEpisodeSlug;
-            const sourceParam = movie.source ? `?source=${movie.source}` : '';
+            const watchParams = new URLSearchParams();
+            if (movie.source) watchParams.set('source', movie.source);
+            if (typeof movie.serverIndex === 'number' && movie.serverIndex >= 0) {
+              watchParams.set('server', String(movie.serverIndex));
+            }
+            const watchQuery = watchParams.toString() ? `?${watchParams.toString()}` : '';
+
+            const detailParams = new URLSearchParams();
+            if (movie.source) detailParams.set('source', movie.source);
+            const detailQuery = detailParams.toString() ? `?${detailParams.toString()}` : '';
+
             const href = hasProgress 
-              ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}${sourceParam}` 
-              : `/phim/${movie.slug}${sourceParam}`;
+              ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}${watchQuery}` 
+              : `/phim/${movie.slug}${detailQuery}`;
 
             const percent = (movie.lastTime && movie.lastDuration && movie.lastDuration > 0)
               ? Math.min(100, Math.max(3, Math.round((movie.lastTime / movie.lastDuration) * 100)))
@@ -147,9 +163,10 @@ export default function ContinueWatching() {
                 <Link href={href} prefetch={false} className="block relative">
                   <div className="relative aspect-video rounded-xl overflow-hidden border border-white/5 shadow-lg">
                     <Image
-                      src={movie.thumbUrl || movie.posterUrl || '/placeholder-poster.svg'}
+                      src={normalizeImageUrl(movie.thumbUrl || movie.posterUrl)}
                       alt={movie.name}
                       fill
+                      unoptimized
                       sizes="(max-width: 768px) 256px, 320px"
                       quality={75}
                       className="object-cover transition-transform duration-500 group-hover:scale-110"
