@@ -320,6 +320,7 @@ function HLSPlayer({
   
   const progressBarRef = useRef<HTMLDivElement>(null);
   const progressFillRef = useRef<HTMLDivElement>(null);
+  const bufferFillRef = useRef<HTMLDivElement>(null);
   const timeDisplayRef = useRef<HTMLSpanElement>(null);
   const isDraggingRef = useRef(false);
   const targetResumeRef = useRef<number>(0);
@@ -738,8 +739,9 @@ function HLSPlayer({
           preferManagedMediaSource: false, // Tắt ManagedMediaSource để tránh lỗi MSE trên Safari
           startPosition: targetResumeRef.current > 3 ? targetResumeRef.current : -1,
           maxLoadingDelay: 4,
-          maxBufferLength: 30,
-          maxMaxBufferLength: 60,
+          maxBufferLength: 300, // Load trước 5 phút (300 giây)
+          maxMaxBufferLength: 600, // Tối đa 10 phút đệm
+          maxBufferSize: 250 * 1000 * 1000, // 250MB để đảm bảo đệm đủ 5 phút video chất lượng cao (mặc định 60MB sẽ dừng tải sớm)
           backBufferLength: 60,
           enableWorker: true,
           startLevel: -1,
@@ -909,6 +911,7 @@ function HLSPlayer({
       }
       hlsRef.current = null;
       hls?.destroy();
+      if (bufferFillRef.current) bufferFillRef.current.style.width = '0%';
       if (video) {
         video.removeEventListener('loadedmetadata', onCanResume);
         video.removeEventListener('loadeddata', onCanResume);
@@ -984,8 +987,30 @@ function HLSPlayer({
           }
         }
       }
+
+      updateBufferBar();
     };
-    const onDurationChange = () => setDuration(video.duration || 0);
+
+    const updateBufferBar = () => {
+      const v = videoRef.current;
+      if (!v || !bufferFillRef.current || !v.duration) return;
+      const curT = v.currentTime;
+      const dur = v.duration;
+      if (v.buffered && v.buffered.length > 0) {
+        for (let i = v.buffered.length - 1; i >= 0; i--) {
+          if (v.buffered.start(i) <= curT && curT <= v.buffered.end(i) + 2) {
+            const bufPct = Math.min(100, (v.buffered.end(i) / dur) * 100);
+            bufferFillRef.current.style.width = `${bufPct}%`;
+            return;
+          }
+        }
+      }
+    };
+    const onProgress = () => updateBufferBar();
+    const onDurationChange = () => {
+      setDuration(video.duration || 0);
+      updateBufferBar();
+    };
 
     let waitTimer: NodeJS.Timeout | null = null;
     const onWaiting = () => {
@@ -1013,6 +1038,7 @@ function HLSPlayer({
     };
 
     video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('progress', onProgress);
     video.addEventListener('durationchange', onDurationChange);
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('canplay', onCanPlay);
@@ -1024,6 +1050,7 @@ function HLSPlayer({
     return () => {
       if (waitTimer) clearTimeout(waitTimer);
       video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('progress', onProgress);
       video.removeEventListener('durationchange', onDurationChange);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
@@ -1761,6 +1788,12 @@ function HLSPlayer({
             onPointerLeave={handlePointerLeave}
             onPointerCancel={handlePointerCancel}
           >
+            {/* Thanh hiển thị lượng video đã tải trước (buffer bar) */}
+            <div
+              ref={bufferFillRef}
+              className="absolute left-0 top-0 bottom-0 bg-white/25 rounded-full pointer-events-none transition-all duration-200 z-10"
+              style={{ width: '0%' }}
+            />
             {/* Ad markers on progress bar */}
             {duration > 0 && adRanges.map((ad, idx) => {
               const leftPct = (ad.start / duration) * 100;
@@ -1768,7 +1801,7 @@ function HLSPlayer({
               return (
                 <div 
                   key={idx}
-                  className="absolute top-0 bottom-0 bg-yellow-400/90 rounded-full pointer-events-none z-10"
+                  className="absolute top-0 bottom-0 bg-yellow-400/90 rounded-full pointer-events-none z-15"
                   style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                   title={`Quảng cáo (${Math.round(ad.duration)}s - Tự động bỏ qua)`}
                 />
