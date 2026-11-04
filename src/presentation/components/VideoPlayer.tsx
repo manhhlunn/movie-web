@@ -739,16 +739,22 @@ function HLSPlayer({
           preferManagedMediaSource: false, // Tắt ManagedMediaSource để tránh lỗi MSE trên Safari
           startPosition: targetResumeRef.current > 3 ? targetResumeRef.current : -1,
           maxLoadingDelay: 4,
-          maxBufferLength: 300, // Load trước 5 phút (300 giây)
-          maxMaxBufferLength: 600, // Tối đa 10 phút đệm
-          maxBufferSize: 250 * 1000 * 1000, // 250MB để đảm bảo đệm đủ 5 phút video chất lượng cao (mặc định 60MB sẽ dừng tải sớm)
-          backBufferLength: 60,
+          maxBufferLength: 45, // Tải trước 45 giây: mức cân bằng lý tưởng, chống giật khựng và không quá tải RAM
+          maxMaxBufferLength: 90, // Giới hạn đệm tối đa 90 giây
+          maxBufferSize: 60 * 1000 * 1000, // 60MB bộ nhớ chuẩn MSE tránh xả RAM liên tục gây giật frame
+          backBufferLength: 30, // Giữ 30s đệm phía sau để tiết kiệm RAM cho giải mã
           enableWorker: true,
           startLevel: -1,
           capLevelToPlayerSize: true,
           startFragPrefetch: true,
           lowLatencyMode: false,
-          maxBufferHole: 0.5,
+          maxBufferHole: 1.0, // Cho phép bỏ qua khe hở timestamp tới 1s từ các CDN phim mà không khựng lại
+          highBufferWatchdogPeriod: 2, // Tự động phát hiện và thoát trạng thái kẹt khi có buffer
+          nudgeMaxRetry: 5, // Tự động nhích nhẹ video vượt qua frame bị lỗi
+          nudgeOffset: 0.1, // Bước nhích 0.1s giúp tiếp tục phát ngay lập tức
+          fragLoadingTimeOut: 20000,
+          fragLoadingMaxRetry: 4,
+          fragLoadingRetryDelay: 1000,
         });
         hlsRef.current = hls;
         hls.loadSource(url);
@@ -1914,6 +1920,8 @@ function VideoPreview({ url, time, isActive }: { url: string; time: number; isAc
           enableWorker: true,
           startLevel: 0,
           capLevelToPlayerSize: true,
+          startFragPrefetch: false,
+          maxBufferSize: 10 * 1000 * 1000,
         });
         hls.loadSource(url);
         hls.attachMedia(video);
@@ -1935,10 +1943,10 @@ function VideoPreview({ url, time, isActive }: { url: string; time: number; isAc
   useEffect(() => {
     if (!isActive) return;
     const timer = setTimeout(() => {
-      if (videoRef.current && Math.abs(videoRef.current.currentTime - time) > 1) {
+      if (videoRef.current && Math.abs(videoRef.current.currentTime - time) > 1.5) {
         videoRef.current.currentTime = time;
       }
-    }, 150);
+    }, 250);
 
     return () => clearTimeout(timer);
   }, [time, isActive]);
