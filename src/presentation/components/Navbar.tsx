@@ -43,8 +43,31 @@ export default function Navbar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const handleMouseEnterDropdown = () => {
+    if (dropdownTimeoutRef.current) {
+      clearTimeout(dropdownTimeoutRef.current);
+      dropdownTimeoutRef.current = null;
+    }
+    setDropdownOpen(true);
+  };
+
+  const handleMouseLeaveDropdown = () => {
+    if (dropdownTimeoutRef.current) {
+      clearTimeout(dropdownTimeoutRef.current);
+    }
+    dropdownTimeoutRef.current = setTimeout(() => {
+      setDropdownOpen(false);
+    }, 200);
+  };
+
+  useEffect(() => {
+    setDropdownOpen(false);
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
@@ -65,6 +88,9 @@ export default function Navbar() {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('keydown', handleKeyDown);
+      if (dropdownTimeoutRef.current) {
+        clearTimeout(dropdownTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -142,38 +168,44 @@ export default function Navbar() {
             {/* Dropdown Menu */}
             <div 
               className="relative ml-2"
-              onMouseEnter={() => setDropdownOpen(true)}
-              onMouseLeave={() => setDropdownOpen(false)}
+              onMouseEnter={handleMouseEnterDropdown}
+              onMouseLeave={handleMouseLeaveDropdown}
             >
               <button
+                type="button"
+                onClick={() => setDropdownOpen((prev) => !prev)}
                 className={cn(
                   'flex items-center gap-1 px-4 py-2 text-sm font-medium transition-colors duration-200 rounded-lg',
                   MORE_LINKS.some(link => pathname === link.href)
                     ? 'text-white'
                     : 'text-zinc-400 hover:text-white'
                 )}
+                aria-expanded={dropdownOpen}
+                aria-haspopup="true"
               >
                 <span className="relative z-10">Khám Phá</span>
-                <ChevronDown className={cn("w-4 h-4 transition-transform", dropdownOpen ? "rotate-180" : "")} />
+                <ChevronDown className={cn("w-4 h-4 transition-transform duration-200", dropdownOpen ? "rotate-180" : "")} />
               </button>
 
               {dropdownOpen && (
-                <div
-                  className="absolute top-full right-0 mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150"
-                >
-                  {MORE_LINKS.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      onClick={() => setDropdownOpen(false)}
-                      className={cn(
-                        'block px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-800',
-                        pathname === link.href ? 'text-white bg-zinc-800/50' : 'text-zinc-400'
-                      )}
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
+                <div className="absolute top-full right-0 pt-2 w-56 z-50">
+                  <div
+                    className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden py-2 animate-in fade-in slide-in-from-top-2 duration-150"
+                  >
+                    {MORE_LINKS.map((link) => (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setDropdownOpen(false)}
+                        className={cn(
+                          'block px-4 py-2.5 text-sm font-medium transition-colors hover:bg-zinc-800',
+                          pathname === link.href ? 'text-white bg-zinc-800/50' : 'text-zinc-400'
+                        )}
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
