@@ -167,6 +167,7 @@ export default function MovieDetailClient({
           src={backdropImage}
           alt={movie.name}
           fill
+          unoptimized
           sizes="100vw"
           quality={85}
           className="object-cover object-top"
@@ -188,6 +189,7 @@ export default function MovieDetailClient({
                 alt={movie.name}
                 width={300}
                 height={450}
+                unoptimized
                 sizes="(max-width: 768px) 192px, 288px"
                 quality={85}
                 className="w-full h-auto object-cover"
@@ -399,6 +401,7 @@ export default function MovieDetailClient({
                           src={person.image}
                           alt={person.name}
                           fill
+                          unoptimized
                           sizes="96px"
                           quality={75}
                           className={cn(

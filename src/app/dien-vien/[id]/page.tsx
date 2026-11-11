@@ -54,6 +54,7 @@ export default async function ActorPage({ params, searchParams }: Props) {
                 src={person.profileUrl}
                 alt={person.name}
                 fill
+                unoptimized
                 sizes="(max-width: 640px) 112px, 144px"
                 quality={85}
                 className="object-cover"

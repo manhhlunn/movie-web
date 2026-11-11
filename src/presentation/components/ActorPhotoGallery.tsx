@@ -151,6 +151,7 @@ export default function ActorPhotoGallery({ name, images }: ActorPhotoGalleryPro
                 src={imgUrl}
                 alt={`${name} - ảnh ${idx + 1}`}
                 fill
+                unoptimized
                 sizes="(max-width: 640px) 112px, (max-width: 1024px) 144px, 176px"
                 quality={80}
                 className="object-cover transition-transform duration-300 group-hover:scale-110 pointer-events-none"
@@ -184,6 +185,7 @@ export default function ActorPhotoGallery({ name, images }: ActorPhotoGalleryPro
               src={selectedImage}
               alt={name}
               fill
+              unoptimized
               quality={95}
               className="object-contain"
               priority

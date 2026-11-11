@@ -100,6 +100,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
             src={movie.thumbUrl || movie.posterUrl}
             alt={movie.name}
             fill
+            unoptimized
             priority
             className="object-cover object-center md:object-top"
             sizes="100vw"
@@ -221,6 +222,7 @@ export default function HeroSection({ movies }: HeroSectionProps) {
                   src={m.thumbUrl || m.posterUrl}
                   alt={m.name}
                   fill
+                  unoptimized
                   className="object-cover"
                   sizes="(max-width: 640px) 160px, 240px"
                   quality={75}
