@@ -16,6 +16,11 @@ import {
   getExploreMovies,
 } from '@/application/useCases/MovieUseCases';
 import { Movie, MovieListResult, ServerData } from '@/domain/entities/Movie';
+import {
+  TmdbMatchMeta,
+  buildTmdbSearchQueries,
+  findStrictTmdbMatch,
+} from '@/lib/tmdbMatch';
 
 export function useHomeMovies() {
   return useQuery({
@@ -137,103 +142,6 @@ export function useInfiniteExploreMovies(
   });
 }
 
-interface TmdbMatchMeta {
-  originName?: string;
-  name?: string;
-  year?: number | string;
-  type?: string;
-}
-
-function normalizeText(s?: string): string {
-  if (!s) return '';
-  return s
-    .toLowerCase()
-    .replace(/[-_.:/]/g, ' ')
-    .replace(/[^a-z0-9\s]/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * Tìm kiếm phim trên TMDB theo điều kiện đối soát thông minh:
- * 1. Khớp tên gốc (originName) hoặc tên tiếng Việt (name)
- * 2. Khớp đúng định dạng phim (phim bộ -> tv, phim lẻ -> movie)
- * 3. Khớp năm phát hành (cho phép dung sai +/- 1 năm do thời điểm công chiếu quốc tế)
- */
-function findStrictTmdbMatch(
-  results: any[],
-  meta?: TmdbMatchMeta
-): { id: string; type: 'movie' | 'tv' } | null {
-  const candidates = (results || []).filter(
-    (r: any) => r.media_type === 'tv' || r.media_type === 'movie'
-  );
-  if (candidates.length === 0) return null;
-
-  const targetOrigin = normalizeText(meta?.originName);
-  const targetName = normalizeText(meta?.name);
-  if (!targetOrigin && !targetName) return null;
-
-  const isSeries = meta?.type === 'series' || meta?.type === 'tvshows';
-  const isSingle = meta?.type === 'single';
-  const targetYear = meta?.year ? parseInt(String(meta.year), 10) : null;
-
-  // Lượt 1: So khớp chính xác tên gốc hoặc tên dịch
-  for (const item of candidates) {
-    const itemTitle = normalizeText(item.title || item.name);
-    const itemOrig = normalizeText(item.original_title || item.original_name);
-    const isNameMatch =
-      (targetOrigin && (itemOrig === targetOrigin || itemTitle === targetOrigin)) ||
-      (targetName && (itemOrig === targetName || itemTitle === targetName));
-    if (!isNameMatch) continue;
-
-    // So khớp định dạng phim
-    if (isSeries && item.media_type !== 'tv') continue;
-    if (isSingle && item.media_type !== 'movie') continue;
-
-    // So khớp năm phát hành (+/- 1 năm)
-    if (targetYear && !isNaN(targetYear)) {
-      const itemDate = item.first_air_date || item.release_date || '';
-      const itemYear = parseInt(itemDate.slice(0, 4), 10);
-      if (!isNaN(itemYear) && Math.abs(itemYear - targetYear) > 1) {
-        continue;
-      }
-    }
-
-    return {
-      id: String(item.id),
-      type: item.media_type as 'movie' | 'tv',
-    };
-  }
-
-  // Lượt 2: So khớp nới lỏng (tên chứa nhau, ví dụ có hậu tố Phần 1, Phần 2...)
-  for (const item of candidates) {
-    const itemTitle = normalizeText(item.title || item.name);
-    const itemOrig = normalizeText(item.original_title || item.original_name);
-    const isLooseNameMatch =
-      (targetOrigin && (itemOrig.includes(targetOrigin) || targetOrigin.includes(itemOrig))) ||
-      (targetName && (itemTitle.includes(targetName) || targetName.includes(itemTitle)));
-    if (!isLooseNameMatch) continue;
-
-    if (isSeries && item.media_type !== 'tv') continue;
-    if (isSingle && item.media_type !== 'movie') continue;
-
-    if (targetYear && !isNaN(targetYear)) {
-      const itemDate = item.first_air_date || item.release_date || '';
-      const itemYear = parseInt(itemDate.slice(0, 4), 10);
-      if (!isNaN(itemYear) && Math.abs(itemYear - targetYear) > 1) {
-        continue;
-      }
-    }
-
-    return {
-      id: String(item.id),
-      type: item.media_type as 'movie' | 'tv',
-    };
-  }
-
-  return null;
-}
-
 /**
  * Tra cứu tự động phim trên TMDB theo tên (ưu tiên originName, fallback sang name).
  * Chỉ gọi 1 request tìm kiếm phim thay vì spam N requests tìm từng diễn viên.
@@ -241,15 +149,8 @@ function findStrictTmdbMatch(
 async function searchMovieOnTmdb(
   meta?: TmdbMatchMeta
 ): Promise<{ id: string; type: 'movie' | 'tv' } | null> {
-  if (!meta?.originName && !meta?.name) return null;
-
-  const queriesToTry: string[] = [];
-  if (meta.originName?.trim()) {
-    queriesToTry.push(meta.originName.trim());
-  }
-  if (meta.name?.trim() && meta.name.trim() !== meta.originName?.trim()) {
-    queriesToTry.push(meta.name.trim());
-  }
+  const queriesToTry = buildTmdbSearchQueries(meta);
+  if (queriesToTry.length === 0) return null;
 
   for (const query of queriesToTry) {
     try {
@@ -407,6 +308,54 @@ export function useMovieExtraSources(
     },
     enabled: (!!imdbId || !!tmdb?.id || !!slug) && source === 'phimapi',
     staleTime: 30 * 60 * 1000, // 30 minutes
+  });
+}
+
+export function useMovieRecommendations(
+  slug: string,
+  options?: {
+    source?: 'phimapi' | 'ophim' | 'nguonc' | 'vsmov';
+    name?: string;
+    originName?: string;
+    tmdbId?: string;
+    tmdbType?: 'movie' | 'tv';
+    year?: number | string;
+    type?: string;
+    enabled?: boolean;
+  }
+) {
+  const source = options?.source || 'phimapi';
+
+  return useQuery({
+    queryKey: ['movie-recommendations-v2', slug, source, options?.tmdbId ?? ''],
+    queryFn: async (): Promise<Movie[]> => {
+      if (!slug) return [];
+      try {
+        const params = new URLSearchParams({ source });
+        if (options?.name) params.set('name', options.name);
+        if (options?.originName) params.set('originName', options.originName);
+        if (options?.tmdbId) params.set('tmdbId', options.tmdbId);
+        if (options?.tmdbType) params.set('tmdbType', options.tmdbType);
+        if (options?.year !== undefined && options?.year !== '') {
+          params.set('year', String(options.year));
+        }
+        if (options?.type) params.set('type', options.type);
+
+        const res = await fetch(
+          `/api/movies/${encodeURIComponent(slug)}/recommendations?${params.toString()}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          return Array.isArray(data?.items) ? data.items : [];
+        }
+      } catch (e) {
+        console.warn('[useMovieRecommendations] Failed to load recommendations:', e);
+      }
+      return [];
+    },
+    enabled: !!slug && (options?.enabled ?? true),
+    staleTime: 30 * 60 * 1000,
+    retry: 1,
   });
 }
 

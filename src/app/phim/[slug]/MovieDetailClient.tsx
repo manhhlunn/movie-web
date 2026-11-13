@@ -2,10 +2,11 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play, Calendar, Clock, Star, Film, Users, Heart, Loader2 } from 'lucide-react';
-import { useMovieDetails, useMoviePeoples } from '@/presentation/hooks/useMovies';
+import { Play, Calendar, Clock, Star, Film, Users, Heart, Loader2, Sparkles } from 'lucide-react';
+import { useMovieDetails, useMoviePeoples, useMovieRecommendations } from '@/presentation/hooks/useMovies';
 import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
+import MovieCard from '@/presentation/components/MovieCard';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { cn, sanitizeHtml } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -40,6 +41,16 @@ export default function MovieDetailClient({
     actors: movie?.actors,
     year: movie?.year,
     type: movie?.type,
+  });
+  const { data: recommendations } = useMovieRecommendations(slug, {
+    source: movie?.source || sourceParam,
+    name: movie?.name,
+    originName: movie?.originName,
+    tmdbId: movie?.tmdb?.id,
+    tmdbType: movie?.tmdb?.type,
+    year: movie?.year,
+    type: movie?.type,
+    enabled: !!movie,
   });
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number; serverIndex?: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -436,6 +447,24 @@ export default function MovieDetailClient({
                   </Link>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Phim Đề Xuất — bất đồng bộ, không block UI chính */}
+        {recommendations && recommendations.length > 0 && (
+          <div className="mt-16">
+            <h3 className="text-xl font-bold font-outfit mb-6 flex items-center gap-2">
+              <Sparkles className="w-6 h-6 text-red-500" />
+              Phim Đề Xuất
+              <span className="text-sm font-normal text-zinc-400">
+                ({recommendations.length} phim)
+              </span>
+            </h3>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2 sm:gap-3 lg:gap-4">
+              {recommendations.map((rec) => (
+                <MovieCard key={rec.slug || rec.id} movie={rec} />
+              ))}
             </div>
           </div>
         )}
