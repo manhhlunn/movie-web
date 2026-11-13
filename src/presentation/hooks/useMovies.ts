@@ -16,6 +16,7 @@ import {
   getExploreMovies,
 } from '@/application/useCases/MovieUseCases';
 import { Movie, MovieListResult, ServerData } from '@/domain/entities/Movie';
+import type { MdlSearchResponse } from '@/domain/entities/MyDramaList';
 import {
   TmdbMatchMeta,
   buildTmdbSearchQueries,
@@ -355,6 +356,47 @@ export function useMovieRecommendations(
     },
     enabled: !!slug && (options?.enabled ?? true),
     staleTime: 30 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useMdlReviewLink(movie?: Movie | null) {
+  const countriesParam =
+    movie?.countries?.map((c) => c.name).filter(Boolean).join(',') ?? '';
+
+  return useQuery({
+    queryKey: [
+      'mdl-review-link-v1',
+      movie?.slug ?? '',
+      movie?.originName ?? '',
+      movie?.name ?? '',
+      movie?.year ?? '',
+      movie?.type ?? '',
+      countriesParam,
+      movie?.tmdb?.id ?? '',
+    ],
+    queryFn: async (): Promise<MdlSearchResponse | null> => {
+      if (!movie || (!movie.originName && !movie.name)) return null;
+      try {
+        const params = new URLSearchParams();
+        if (movie.name) params.set('name', movie.name);
+        if (movie.originName) params.set('originName', movie.originName);
+        if (movie.year) params.set('year', String(movie.year));
+        if (movie.type) params.set('type', movie.type);
+        if (countriesParam) params.set('countries', countriesParam);
+        if (movie.tmdb?.id) params.set('tmdbId', movie.tmdb.id);
+        if (movie.tmdb?.type) params.set('tmdbType', movie.tmdb.type);
+
+        const res = await fetch(`/api/mydramalist/search?${params.toString()}`);
+        if (!res.ok) return null;
+        return (await res.json()) as MdlSearchResponse;
+      } catch (err) {
+        console.warn('[useMdlReviewLink] Failed to resolve MDL review link:', err);
+        return null;
+      }
+    },
+    enabled: !!movie && !!(movie.originName || movie.name),
+    staleTime: 24 * 60 * 60 * 1000,
     retry: 1,
   });
 }

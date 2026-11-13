@@ -2,8 +2,8 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Play, Calendar, Clock, Star, Film, Users, Heart, Loader2, Sparkles } from 'lucide-react';
-import { useMovieDetails, useMoviePeoples, useMovieRecommendations } from '@/presentation/hooks/useMovies';
+import { Play, Calendar, Clock, Star, Film, Users, Heart, Loader2, Sparkles, MessageSquareText } from 'lucide-react';
+import { useMovieDetails, useMoviePeoples, useMovieRecommendations, useMdlReviewLink } from '@/presentation/hooks/useMovies';
 import { Movie } from '@/domain/entities/Movie';
 import EpisodeList from '@/presentation/components/EpisodeList';
 import MovieCard from '@/presentation/components/MovieCard';
@@ -52,6 +52,7 @@ export default function MovieDetailClient({
     type: movie?.type,
     enabled: !!movie,
   });
+  const { data: mdlData } = useMdlReviewLink(movie);
   const [watchProgress, setWatchProgress] = useState<{ episodeSlug: string; time: number; serverIndex?: number } | null>(null);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [loadingActorId, setLoadingActorId] = useState<number | string | null>(null);
@@ -169,6 +170,20 @@ export default function MovieDetailClient({
       firstEpisodeLink = `/xem-phim/${movie.slug}/${firstServer.episodes[0].slug}?source=${sourceParam}`;
     }
   }
+
+  const defaultMdlQuery = (movie.originName || movie.name || '').trim();
+  const mdlFallbackSearchUrl =
+    mdlData?.fallbackSearchUrl ||
+    (defaultMdlQuery
+      ? `https://mydramalist.com/search?adv=titles&q=${encodeURIComponent(defaultMdlQuery)}`
+      : 'https://mydramalist.com');
+  const commentHref = mdlData?.reviewUrl || mdlFallbackSearchUrl;
+  const commentTitle =
+    mdlData?.reviewUrl && mdlData.bestMatch
+      ? `Mở reviews & comments trên MyDramaList (${mdlData.bestMatch.title}${
+          mdlData.bestMatch.year ? ` • ${mdlData.bestMatch.year}` : ''
+        })`
+      : 'Tìm & xem bình luận trên MyDramaList';
 
   return (
     <div className="min-h-screen pb-20">
@@ -291,6 +306,16 @@ export default function MovieDetailClient({
               >
                 <Heart className={cn("w-6 h-6 transition-transform duration-300", isBookmarked ? "fill-red-600 scale-110" : "scale-100")} />
               </button>
+              <a
+                href={commentHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center px-6 py-3.5 bg-[#1675b6] text-white font-semibold rounded-lg hover:bg-[#115889] transition-colors shadow-lg shadow-[#1675b6]/20"
+                title={commentTitle}
+              >
+                <MessageSquareText className="w-5 h-5 mr-2" />
+                Comment
+              </a>
               {movie.imdbId && (
                 <a
                   href={`https://www.imdb.com/title/${movie.imdbId}`}
