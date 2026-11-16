@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type Hls from 'hls.js';
 import {
   Play,
@@ -21,7 +21,12 @@ import {
   Tv,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { addToHistory } from '@/lib/userStore';
+import {
+  addToHistory,
+  suppressNextHistoryCleanupSave,
+  isHistoryCleanupSaveSuppressed,
+  clearHistoryCleanupSaveSuppression,
+} from '@/lib/userStore';
 import { getUserId, fetchUserHistory } from '@/lib/syncHistory';
 import { isEpisodeMatch } from '@/lib/episodeUtils';
 import { useRouter } from 'next/navigation';
@@ -29,6 +34,15 @@ import { useVideoHotkeys } from '@/presentation/hooks/useVideoHotkeys';
 import { QualitySelector } from '@/presentation/components/player/QualitySelector';
 import { VideoSettingsModal } from '@/presentation/components/player/VideoSettingsModal';
 import { AdSkipOverlay, AdSkippedToast } from '@/presentation/components/player/AdSkipOverlay';
+import {
+  AdRange,
+  FragmentLike,
+  areAdRangesChanged,
+  extractAdRangesFromFragments,
+  findAdRangeForFragment,
+  getSkipTargetForAdRange,
+  isAdSegment,
+} from '@/lib/adDetection';
 
 interface VideoPlayerProps {
   linkM3u8?: string;
@@ -43,6 +57,78 @@ interface VideoPlayerProps {
   movie?: any;
   nextEpisodeUrl?: string;
   onNextEpisode?: () => void;
+  isHistorySaveReady?: boolean;
+  serverSwitchToken?: number;
+}
+
+interface PlaybackSnapshot {
+  movieSlug: string;
+  episodeSlug: string;
+  serverIndex: number;
+  episodeIndex: number;
+  time: number;
+  duration: number;
+  isIframe: boolean;
+}
+
+/**
+ * Lưu tiến độ xem phim vào localStorage (khi chưa đăng nhập ID) và đồng bộ lịch sử.
+ */
+function persistWatchProgress({
+  movie,
+  movieSlug,
+  episodeSlug,
+  serverIndex,
+  episodeIndex,
+  source,
+  time,
+  duration,
+  force = false,
+  allowZeroPosition = false,
+  resetPosition = false,
+}: {
+  movie: any;
+  movieSlug: string;
+  episodeSlug: string;
+  serverIndex: number;
+  episodeIndex: number;
+  source?: string;
+  time: number;
+  duration: number;
+  force?: boolean;
+  allowZeroPosition?: boolean;
+  resetPosition?: boolean;
+}) {
+  if (!getUserId()) {
+    try {
+      localStorage.setItem(
+        `watch-progress-${movieSlug}`,
+        JSON.stringify({
+          episodeSlug,
+          serverIndex,
+          episodeIndex,
+          time,
+          duration,
+          updatedAt: Date.now(),
+        })
+      );
+    } catch {}
+  }
+
+  if (!movie) return;
+  const movieWithSource = source && !movie.source ? { ...movie, source } : movie;
+  addToHistory(
+    movieWithSource,
+    episodeSlug,
+    time,
+    duration,
+    serverIndex,
+    episodeIndex,
+    force,
+    allowZeroPosition || resetPosition
+      ? { allowZeroPosition, resetPosition }
+      : undefined
+  );
 }
 
 function isIOSDevice(): boolean {
@@ -53,24 +139,7 @@ function isIOSDevice(): boolean {
   );
 }
 
-function isAdSegment(line: string): boolean {
-  if (!line) return false;
-  const clean = line.trim();
-  if (clean.startsWith('#')) return false;
-  // Bỏ qua các phân đoạn sửa lỗi phim của CDN (convertv8, convert...)
-  if (/convertv\d*/i.test(clean)) return false;
-
-  // 1. Phù hợp định dạng /v8/hash/segment_0001.ts hoặc /v[0-9]+/hash/segment_...
-  if (/\/v\d+\/[a-f0-9]{10,}\/segment_\d+\.ts/i.test(clean)) return true;
-  // 2. Định dạng segment_0001.ts với đường dẫn tuyệt đối
-  if (/\/segment_\d+\.ts/i.test(clean) && (clean.startsWith('/') || clean.includes('/v'))) return true;
-  // 3. Các từ khoá quảng cáo trong đường dẫn
-  if (/(\/|\b)(ads?|advert|qc|quangcao|midroll|preroll)\b/i.test(clean)) return true;
-
-  return false;
-}
-
-async function fetchAdRangesForNative(url: string): Promise<{ start: number; end: number; duration: number }[]> {
+async function fetchAdRangesForNative(url: string): Promise<AdRange[]> {
   try {
     const res = await fetch(url);
     if (!res.ok) return [];
@@ -134,12 +203,16 @@ export default function VideoPlayer({
   movie,
   nextEpisodeUrl,
   onNextEpisode,
+  isHistorySaveReady = true,
+  serverSwitchToken = 0,
 }: VideoPlayerProps) {
   const [useIframeFallback, setUseIframeFallback] = useState(false);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
-  const [prevTrackKey, setPrevTrackKey] = useState(`${linkM3u8}-${episodeSlug}`);
+  const currentTrackKey = `${linkM3u8}-${linkEmbed}-${serverIndex}-${episodeSlug}`;
+  const [prevTrackKey, setPrevTrackKey] = useState(currentTrackKey);
+  const latestPlaybackRef = useRef<PlaybackSnapshot | null>(null);
+  const lastHandledSwitchTokenRef = useRef(0);
 
-  const currentTrackKey = `${linkM3u8}-${episodeSlug}`;
   if (prevTrackKey !== currentTrackKey) {
     setPrevTrackKey(currentTrackKey);
     setUseIframeFallback(false);
@@ -153,7 +226,16 @@ export default function VideoPlayer({
     } catch {}
   }, [linkM3u8, episodeSlug]);
 
+  useEffect(() => {
+    if (useIframeFallback) {
+      clearHistoryCleanupSaveSuppression(movieSlug);
+    }
+  }, [useIframeFallback, movieSlug]);
+
   const handleSwitchToIframe = (reason?: string) => {
+    if (movieSlug) {
+      suppressNextHistoryCleanupSave(movieSlug);
+    }
     setFallbackReason(reason || null);
     setUseIframeFallback(true);
   };
@@ -181,6 +263,10 @@ export default function VideoPlayer({
         onNextEpisode={onNextEpisode} 
         linkEmbed={linkEmbed}
         onSwitchIframe={handleSwitchToIframe}
+        isHistorySaveReady={isHistorySaveReady}
+        serverSwitchToken={serverSwitchToken}
+        latestPlaybackRef={latestPlaybackRef}
+        lastHandledSwitchTokenRef={lastHandledSwitchTokenRef}
       />
     );
   }
@@ -193,6 +279,16 @@ export default function VideoPlayer({
         isFallback={useIframeFallback}
         fallbackReason={fallbackReason}
         onRetryM3u8={linkM3u8 ? handleSwitchToHLS : undefined}
+        movieSlug={movieSlug}
+        episodeSlug={episodeSlug}
+        serverIndex={serverIndex}
+        episodeIndex={episodeIndex}
+        source={source}
+        movie={movie}
+        isHistorySaveReady={isHistorySaveReady}
+        serverSwitchToken={serverSwitchToken}
+        latestPlaybackRef={latestPlaybackRef}
+        lastHandledSwitchTokenRef={lastHandledSwitchTokenRef}
       />
     );
   }
@@ -220,6 +316,10 @@ function HLSPlayer({
   onNextEpisode,
   linkEmbed,
   onSwitchIframe,
+  isHistorySaveReady = true,
+  serverSwitchToken = 0,
+  latestPlaybackRef,
+  lastHandledSwitchTokenRef,
 }: { 
   url: string; 
   title?: string; 
@@ -234,9 +334,14 @@ function HLSPlayer({
   onNextEpisode?: () => void;
   linkEmbed?: string;
   onSwitchIframe?: (reason?: string) => void;
+  isHistorySaveReady?: boolean;
+  serverSwitchToken?: number;
+  latestPlaybackRef?: React.RefObject<PlaybackSnapshot | null>;
+  lastHandledSwitchTokenRef?: React.RefObject<number>;
 }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(() => {
@@ -277,16 +382,15 @@ function HLSPlayer({
     }
   });
   const [adSkippedToast, setAdSkippedToast] = useState<string | null>(null);
-  const [adRanges, setAdRanges] = useState<{ start: number; end: number; duration: number }[]>([]);
-  const [activeAdInfo, setActiveAdInfo] = useState<{ start: number; end: number; duration: number } | null>(null);
-  const adRangesRef = useRef<{ start: number; end: number; duration: number }[]>([]);
-  const autoSkipAdsRef = useRef<boolean>(true);
-  const activeAdInfoRef = useRef<{ start: number; end: number; duration: number } | null>(null);
+  const [adRanges, setAdRanges] = useState<AdRange[]>([]);
+  const [activeAdInfo, setActiveAdInfo] = useState<AdRange | null>(null);
+  const adRangesRef = useRef<AdRange[]>([]);
+  const lastCommittedAdRangesRef = useRef<AdRange[]>([]);
+  const autoSkipAdsRef = useRef<boolean>(autoSkipAds);
+  const activeAdInfoRef = useRef<AdRange | null>(null);
   const lastSkippedTimeRef = useRef<number>(0);
-
-  useEffect(() => {
-    adRangesRef.current = adRanges;
-  }, [adRanges]);
+  const lastSkippedTargetRef = useRef<number | null>(null);
+  const adSkipToastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     autoSkipAdsRef.current = autoSkipAds;
@@ -296,15 +400,87 @@ function HLSPlayer({
     activeAdInfoRef.current = activeAdInfo;
   }, [activeAdInfo]);
 
+  const getActiveLevelFragments = useCallback((): readonly FragmentLike[] | undefined => {
+    const hls = hlsRef.current;
+    if (!hls) return undefined;
+    const lvlIdx = hls.currentLevel !== -1 ? hls.currentLevel : hls.loadLevel;
+    return hls.levels?.[lvlIdx]?.details?.fragments;
+  }, []);
+
+  const resetAdRanges = useCallback(() => {
+    adRangesRef.current = [];
+    lastCommittedAdRangesRef.current = [];
+    lastSkippedTimeRef.current = 0;
+    lastSkippedTargetRef.current = null;
+    setAdRanges([]);
+    setActiveAdInfo(null);
+  }, []);
+
+  const syncAdRanges = useCallback((fragments: readonly FragmentLike[], forceUiUpdate = false) => {
+    const detected = extractAdRangesFromFragments(fragments);
+    if (areAdRangesChanged(adRangesRef.current, detected, 0.01)) {
+      adRangesRef.current = detected;
+    }
+
+    const uiTolerance = forceUiUpdate ? 0.01 : 0.5;
+    if (areAdRangesChanged(lastCommittedAdRangesRef.current, detected, uiTolerance)) {
+      if (lastCommittedAdRangesRef.current.length === 0 && detected.length > 0) {
+        console.log('[VideoPlayer] Phát hiện khoảng quảng cáo cần bỏ qua:', detected);
+      }
+      lastCommittedAdRangesRef.current = detected;
+      setAdRanges(detected);
+    }
+  }, []);
+
+  const skipAdRange = useCallback(
+    (
+      video: HTMLVideoElement,
+      adRange: AdRange,
+      fragments?: readonly FragmentLike[],
+      options?: { force?: boolean; toastPrefix?: string }
+    ) => {
+      const target = getSkipTargetForAdRange(
+        fragments ?? getActiveLevelFragments(),
+        adRange,
+        video.duration || 0
+      );
+      const now = Date.now();
+      const isSameTarget =
+        lastSkippedTargetRef.current !== null &&
+        Math.abs(target - lastSkippedTargetRef.current) <= 0.05;
+
+      if (!options?.force && isSameTarget && now - lastSkippedTimeRef.current < 2000) {
+        return;
+      }
+
+      const shouldShowToast = options?.force || now - lastSkippedTimeRef.current > 2000;
+      lastSkippedTimeRef.current = now;
+      lastSkippedTargetRef.current = target;
+      video.currentTime = target;
+      setActiveAdInfo(null);
+
+      if (shouldShowToast) {
+        const secs = Math.max(1, Math.round(adRange.duration));
+        const prefix = options?.toastPrefix ?? '⚡ Đã tự động bỏ qua';
+        if (adSkipToastTimerRef.current) {
+          clearTimeout(adSkipToastTimerRef.current);
+        }
+        setAdSkippedToast(`${prefix} ${secs}s quảng cáo`);
+        adSkipToastTimerRef.current = setTimeout(() => {
+          setAdSkippedToast(null);
+          adSkipToastTimerRef.current = null;
+        }, 3500);
+      }
+    },
+    [getActiveLevelFragments]
+  );
+
   const toggleAutoSkipAds = (val: boolean) => {
     setAutoSkipAds(val);
     autoSkipAdsRef.current = val;
     localStorage.setItem('player-autoskip-ads', String(val));
     if (val && activeAdInfoRef.current && videoRef.current) {
-      videoRef.current.currentTime = activeAdInfoRef.current.end + 0.1;
-      setActiveAdInfo(null);
-      setAdSkippedToast('⚡ Đã tự động bỏ qua quảng cáo');
-      setTimeout(() => setAdSkippedToast(null), 3000);
+      skipAdRange(videoRef.current, activeAdInfoRef.current, undefined, { force: true });
     }
   };
 
@@ -345,7 +521,6 @@ function HLSPlayer({
   const previewHoverTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Speed, Quality and PiP states
-  const hlsRef = useRef<Hls | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>([]);
@@ -422,37 +597,107 @@ function HLSPlayer({
     }
   }, [isRotated]);
 
+  const justSwitchedResumeRef = useRef<{ token: number; time: number } | null>(null);
+  const movieRef = useRef(movie);
+  useEffect(() => {
+    movieRef.current = movie;
+  }, [movie]);
+
+  // Lưu ngay lập tức khi người dùng chủ động đổi sang server HLS khác
+  useEffect(() => {
+    if (
+      !serverSwitchToken ||
+      !lastHandledSwitchTokenRef ||
+      serverSwitchToken === lastHandledSwitchTokenRef.current
+    ) {
+      return;
+    }
+    lastHandledSwitchTokenRef.current = serverSwitchToken;
+
+    if (!movieSlug || !episodeSlug || !movieRef.current) return;
+
+    const isSingle = movieRef.current?.type === 'single';
+    const prev = latestPlaybackRef?.current;
+    let preservedTime = 0;
+    let preservedDuration = 0;
+
+    if (
+      prev &&
+      prev.movieSlug === movieSlug &&
+      !prev.isIframe &&
+      isEpisodeMatch(prev.episodeSlug, episodeSlug, isSingle && prev.episodeIndex === episodeIndex) &&
+      prev.time > 5 &&
+      (!prev.duration || prev.time < prev.duration * 0.95)
+    ) {
+      preservedTime = prev.time;
+      preservedDuration = prev.duration || 0;
+    } else if (!getUserId()) {
+      try {
+        const savedData = localStorage.getItem(`watch-progress-${movieSlug}`);
+        if (savedData) {
+          const parsed = JSON.parse(savedData);
+          if (
+            isEpisodeMatch(parsed.episodeSlug, episodeSlug, isSingle && parsed.episodeIndex === episodeIndex) &&
+            parsed.time > 5 &&
+            (!parsed.duration || parsed.time < parsed.duration * 0.95)
+          ) {
+            preservedTime = parsed.time;
+            preservedDuration = parsed.duration || 0;
+          }
+        }
+      } catch {}
+    }
+
+    justSwitchedResumeRef.current = { token: serverSwitchToken, time: preservedTime };
+
+    persistWatchProgress({
+      movie: movieRef.current,
+      movieSlug,
+      episodeSlug,
+      serverIndex,
+      episodeIndex,
+      source,
+      time: preservedTime,
+      duration: preservedDuration,
+      force: true,
+      allowZeroPosition: true,
+      resetPosition: preservedTime <= 0,
+    });
+  }, [
+    serverSwitchToken,
+    movieSlug,
+    episodeSlug,
+    serverIndex,
+    episodeIndex,
+    source,
+    lastHandledSwitchTokenRef,
+    latestPlaybackRef,
+  ]);
+
   // Save progress logic (Mỗi 5s, khi pause và khi rời trang)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !movieSlug || !episodeSlug) return;
 
     const saveCurrentProgress = (force = false) => {
+      if (!isHistorySaveReady) return;
       // QUAN TRỌNG: Đang kiểm tra lịch sử xem cũ từ Supabase/localStorage -> Không ghi đè
       if (isHistoryFetchingRef.current) return;
       if (!video || video.currentTime <= 5) return;
       // QUAN TRỌNG: Không lưu đè nếu phim có tiến độ cũ nhưng video chưa kịp seek
       if (targetResumeRef.current > 5 && !hasResumedRef.current) return;
 
-      const progress = {
+      persistWatchProgress({
+        movie,
+        movieSlug,
         episodeSlug,
         serverIndex,
         episodeIndex,
+        source,
         time: video.currentTime,
         duration: video.duration || 0,
-        updatedAt: Date.now(),
-      };
-
-      const currentUserId = getUserId();
-      // Nếu chưa nhập ID: lưu vào localStorage
-      if (!currentUserId) {
-        localStorage.setItem(`watch-progress-${movieSlug}`, JSON.stringify(progress));
-      }
-      
-      // Đồng bộ Supabase (nếu có ID: chỉ lưu Supabase, không lưu local)
-      if (movie) {
-        addToHistory(movie, episodeSlug, video.currentTime, video.duration, serverIndex, episodeIndex, force);
-      }
+        force,
+      });
     };
 
     const interval = setInterval(() => {
@@ -470,9 +715,22 @@ function HLSPlayer({
     return () => {
       clearInterval(interval);
       video.removeEventListener('pause', handlePause);
-      saveCurrentProgress(true);
+      if (latestPlaybackRef && movieSlug && episodeSlug) {
+        latestPlaybackRef.current = {
+          movieSlug,
+          episodeSlug,
+          serverIndex,
+          episodeIndex,
+          time: video.currentTime || 0,
+          duration: video.duration || 0,
+          isIframe: false,
+        };
+      }
+      if (!isHistoryCleanupSaveSuppressed(movieSlug)) {
+        saveCurrentProgress(true);
+      }
     };
-  }, [movieSlug, episodeSlug, movie, serverIndex, episodeIndex, source]);
+  }, [movieSlug, episodeSlug, movie, serverIndex, episodeIndex, source, isHistorySaveReady, latestPlaybackRef]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -495,6 +753,8 @@ function HLSPlayer({
     setQualityLevels([]);
     setCurrentQuality(-1);
     setShowQualityMenu(false);
+    resetAdRanges();
+    setAdSkippedToast(null);
     if (previewHoverTimerRef.current) {
       clearTimeout(previewHoverTimerRef.current);
       previewHoverTimerRef.current = null;
@@ -562,7 +822,20 @@ function HLSPlayer({
     } catch (e) {}
 
     // Lấy tiến độ đã lưu cho tập phim này
-    if (movieSlug && episodeSlug) {
+    if (
+      serverSwitchToken &&
+      justSwitchedResumeRef.current &&
+      justSwitchedResumeRef.current.token === serverSwitchToken
+    ) {
+      const switchedTime = justSwitchedResumeRef.current.time;
+      justSwitchedResumeRef.current = null;
+      targetResumeRef.current = switchedTime > 3 ? switchedTime : 0;
+      isHistoryFetchingRef.current = false;
+      clearTimeout(historyFetchTimeout);
+      if (targetResumeRef.current > 3) {
+        doSeek(targetResumeRef.current);
+      }
+    } else if (movieSlug && episodeSlug) {
       const activeUserId = getUserId();
       if (activeUserId) {
         // NẾU ĐÃ NHẬP ID: Lấy tiến độ trực tiếp từ Supabase API
@@ -633,9 +906,11 @@ function HLSPlayer({
       video.src = url;
       video.load();
       fetchAdRangesForNative(url).then(ranges => {
+        if (isCancelled || nativeProxyRetried) return;
         if (ranges.length > 0) {
           console.log('[VideoPlayer] Native Safari: phát hiện các đoạn quảng cáo:', ranges);
           adRangesRef.current = ranges;
+          lastCommittedAdRangesRef.current = ranges;
           setAdRanges(ranges);
         }
       });
@@ -670,6 +945,7 @@ function HLSPlayer({
         if (!nativeProxyRetried && !url.includes('/api/stream-filter')) {
           nativeProxyRetried = true;
           nativeLoadedHandled = false;
+          resetAdRanges();
           console.warn('[VideoPlayer] Native Safari HLS lỗi trực tiếp, thử qua proxy /api/stream-filter...');
           video.src = `/api/stream-filter?url=${encodeURIComponent(url)}`;
           video.load();
@@ -792,70 +1068,64 @@ function HLSPlayer({
         });
 
         hls.on(Hls.Events.LEVEL_LOADED, (_, data) => {
-          // Tự động phát hiện các đoạn quảng cáo (nếu còn trong stream)
-          const frags = data.details?.fragments || [];
-          const detected: { start: number; end: number; duration: number }[] = [];
-          let currentAd: { start: number; end: number; duration: number } | null = null;
+          // Phát hiện các đoạn quảng cáo ban đầu theo playlist
+          syncAdRanges(data.details?.fragments || [], true);
+        });
 
-          for (const frag of frags) {
-            const segUrl = frag.relurl || frag.url || '';
-            if (isAdSegment(segUrl)) {
-              const fStart = frag.start;
-              const fDur = frag.duration;
-              if (!currentAd) {
-                currentAd = { start: fStart, end: fStart + fDur, duration: fDur };
-              } else {
-                currentAd.end = fStart + fDur;
-                currentAd.duration += fDur;
-              }
-            } else {
-              if (currentAd) {
-                detected.push(currentAd);
-                currentAd = null;
-              }
-            }
+        hls.on(Hls.Events.LEVEL_UPDATED, (_, data) => {
+          const targetLevel = hls && hls.currentLevel !== -1 ? hls.currentLevel : hls?.loadLevel;
+          if (hls && targetLevel !== undefined && targetLevel !== -1 && data.level !== targetLevel) {
+            return;
           }
-          if (currentAd) detected.push(currentAd);
+          syncAdRanges(data.details?.fragments || []);
+        });
 
-          if (detected.length > 0) {
-            const currentStr = JSON.stringify(adRangesRef.current);
-            const newStr = JSON.stringify(detected);
-            if (currentStr !== newStr) {
-              console.log('[VideoPlayer] Phát hiện khoảng quảng cáo cần bỏ qua:', detected);
-              adRangesRef.current = detected;
-              setAdRanges(detected);
-            }
+        hls.on(Hls.Events.LEVEL_PTS_UPDATED, (_, data) => {
+          // Cập nhật lại vị trí quảng cáo theo PTS thực tế khi hls.js nạp/transmux fragment
+          // (tránh lệch thời gian khi #EXTINF trong playlist sai khác so với PTS thật)
+          if (data.frag && data.frag.type !== 'main') return;
+          const targetLevel = hls && hls.currentLevel !== -1 ? hls.currentLevel : hls?.loadLevel;
+          if (hls && targetLevel !== undefined && targetLevel !== -1 && data.frag && data.frag.level !== targetLevel) {
+            return;
+          }
+          syncAdRanges(data.details?.fragments || []);
+        });
+
+        hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+          const switchedFrags = hls?.levels?.[data.level]?.details?.fragments;
+          if (switchedFrags) {
+            syncAdRanges(switchedFrags, true);
           }
         });
 
         hls.on(Hls.Events.FRAG_CHANGED, (_, data) => {
           const frag = data.frag;
           if (!frag) return;
+          const levelFrags = hls?.levels?.[frag.level]?.details?.fragments;
+          if (levelFrags) {
+            syncAdRanges(levelFrags);
+          }
+
           const segUrl = frag.relurl || frag.url || '';
           const isAd = isAdSegment(segUrl);
           if (isAd) {
-            const matchedAd = adRangesRef.current.find(a => frag.start >= a.start - 1 && frag.start <= a.end) || {
-              start: frag.start,
-              end: frag.start + frag.duration,
-              duration: frag.duration,
-            };
+            const matchedAd =
+              (levelFrags ? findAdRangeForFragment(levelFrags, frag) : null) ||
+              adRangesRef.current.find(a => frag.start >= a.start - 1 && frag.start <= a.end) || {
+                start: frag.start,
+                end: frag.start + frag.duration,
+                duration: frag.duration,
+              };
 
             if (autoSkipAdsRef.current) {
-              if (Date.now() - lastSkippedTimeRef.current > 2000) {
-                lastSkippedTimeRef.current = Date.now();
-                const skipTarget = matchedAd.end + 0.1;
-                console.log(`[VideoPlayer] FRAG_CHANGED: Phát hiện quảng cáo, tự động tua đến ${skipTarget.toFixed(1)}s`);
-                video.currentTime = skipTarget;
-                setAdSkippedToast(`⚡ Đã tự động bỏ qua ${Math.round(matchedAd.duration)}s quảng cáo`);
-                setTimeout(() => setAdSkippedToast(null), 3500);
-              }
+              skipAdRange(video, matchedAd, levelFrags);
             } else {
               setActiveAdInfo(matchedAd);
             }
           } else {
             // Chỉ tắt nút Skip Ad nếu thời gian hiện tại không còn nằm trong khoảng quảng cáo nào
             const v = videoRef.current;
-            const isInAd = v && adRangesRef.current.some(a => v.currentTime >= a.start - 0.25 && v.currentTime < a.end);
+            const isInAd = v && adRangesRef.current.some(a => v.currentTime >= a.start && v.currentTime < a.end);
             if (!isInAd) {
               setActiveAdInfo(null);
             }
@@ -874,6 +1144,7 @@ function HLSPlayer({
                   hls?.startLoad();
                 } else if (!triedStreamFilterProxy && !url.includes('/api/stream-filter')) {
                   triedStreamFilterProxy = true;
+                  resetAdRanges();
                   console.warn('[HLS] Thử kết nối qua proxy /api/stream-filter để vượt lỗi CORS/Ad segment...');
                   hls?.loadSource(`/api/stream-filter?url=${encodeURIComponent(url)}`);
                   hls?.startLoad();
@@ -915,6 +1186,10 @@ function HLSPlayer({
         clearTimeout(previewHoverTimerRef.current);
         previewHoverTimerRef.current = null;
       }
+      if (adSkipToastTimerRef.current) {
+        clearTimeout(adSkipToastTimerRef.current);
+        adSkipToastTimerRef.current = null;
+      }
       hlsRef.current = null;
       hls?.destroy();
       if (bufferFillRef.current) bufferFillRef.current.style.width = '0%';
@@ -937,13 +1212,31 @@ function HLSPlayer({
         video.load();
       }
     };
-  }, [url, episodeSlug, retryCount]);
+  }, [url, episodeSlug, retryCount, resetAdRanges, syncAdRanges, skipAdRange]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     let lastSecond = -1;
+
+    const checkAdAtCurrentTime = (v: HTMLVideoElement, curT: number) => {
+      if (adRangesRef.current.length === 0 || v.seeking) return;
+
+      const currentAd = adRangesRef.current.find(ad => curT >= ad.start - 0.25 && curT < ad.end);
+      if (currentAd) {
+        if (autoSkipAdsRef.current) {
+          skipAdRange(v, currentAd, getActiveLevelFragments());
+        } else {
+          const prev = activeAdInfoRef.current;
+          if (!prev || Math.abs(prev.start - currentAd.start) > 0.1 || Math.abs(prev.end - currentAd.end) > 0.1) {
+            setActiveAdInfo(currentAd);
+          }
+        }
+      } else if (activeAdInfoRef.current) {
+        setActiveAdInfo(null);
+      }
+    };
 
     const onTimeUpdate = () => {
       const v = videoRef.current;
@@ -952,25 +1245,7 @@ function HLSPlayer({
       const curT = v.currentTime;
       const dur = v.duration || 0;
 
-      if (adRangesRef.current.length > 0) {
-        const currentAd = adRangesRef.current.find(ad => curT >= ad.start - 0.25 && curT < ad.end);
-        if (currentAd) {
-          if (autoSkipAdsRef.current) {
-            if (Date.now() - lastSkippedTimeRef.current > 2000) {
-              lastSkippedTimeRef.current = Date.now();
-              const skipTarget = currentAd.end + 0.1;
-              console.log(`[VideoPlayer] onTimeUpdate: Tự động bỏ qua quảng cáo từ ${currentAd.start.toFixed(1)}s -> ${currentAd.end.toFixed(1)}s`);
-              v.currentTime = skipTarget;
-              setAdSkippedToast(`⚡ Đã tự động bỏ qua ${Math.round(currentAd.duration)}s quảng cáo`);
-              setTimeout(() => setAdSkippedToast(null), 3500);
-            }
-          } else {
-            setActiveAdInfo(currentAd);
-          }
-        } else if (activeAdInfoRef.current) {
-          setActiveAdInfo(null);
-        }
-      }
+      checkAdAtCurrentTime(v, curT);
 
       if (pendingSeekTimeRef.current === null) {
         const pct = dur > 0 ? (curT / dur) * 100 : 0;
@@ -1033,6 +1308,13 @@ function HLSPlayer({
       if (waitTimer) clearTimeout(waitTimer);
       setIsLoading(false);
     };
+    const onSeeked = () => {
+      onCanPlay();
+      const v = videoRef.current;
+      if (v) {
+        checkAdAtCurrentTime(v, v.currentTime);
+      }
+    };
     const onPauseClearWait = () => {
       if (waitTimer) clearTimeout(waitTimer);
       setIsLoading(false);
@@ -1049,7 +1331,7 @@ function HLSPlayer({
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('playing', onCanPlay);
-    video.addEventListener('seeked', onCanPlay);
+    video.addEventListener('seeked', onSeeked);
     video.addEventListener('pause', onPauseClearWait);
     video.addEventListener('ended', onEnded);
 
@@ -1061,11 +1343,11 @@ function HLSPlayer({
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('playing', onCanPlay);
-      video.removeEventListener('seeked', onCanPlay);
+      video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('pause', onPauseClearWait);
       video.removeEventListener('ended', onEnded);
     };
-  }, []);
+  }, [getActiveLevelFragments, skipAdRange]);
 
   // Fullscreen sync logic
   useEffect(() => {
@@ -1728,10 +2010,10 @@ function HLSPlayer({
           currentTime={currentTime}
           onSkipAd={() => {
             if (videoRef.current && activeAdInfo) {
-              videoRef.current.currentTime = activeAdInfo.end + 0.1;
-              setActiveAdInfo(null);
-              setAdSkippedToast('⚡ Đã bỏ qua quảng cáo');
-              setTimeout(() => setAdSkippedToast(null), 2500);
+              skipAdRange(videoRef.current, activeAdInfo, undefined, {
+                force: true,
+                toastPrefix: '⚡ Đã bỏ qua',
+              });
             }
           }}
         />
@@ -1802,8 +2084,8 @@ function HLSPlayer({
             />
             {/* Ad markers on progress bar */}
             {duration > 0 && adRanges.map((ad, idx) => {
-              const leftPct = (ad.start / duration) * 100;
-              const widthPct = Math.max((ad.duration / duration) * 100, 0.6);
+              const leftPct = Math.max(0, Math.min(100, (ad.start / duration) * 100));
+              const widthPct = Math.max(0, Math.min(100 - leftPct, Math.max((ad.duration / duration) * 100, 0.6)));
               return (
                 <div 
                   key={idx}
@@ -1962,24 +2244,106 @@ function IframePlayer({
   isFallback,
   fallbackReason,
   onRetryM3u8,
+  movieSlug,
+  episodeSlug,
+  serverIndex = 0,
+  episodeIndex = 0,
+  source,
+  movie,
+  isHistorySaveReady = true,
+  serverSwitchToken = 0,
+  latestPlaybackRef,
+  lastHandledSwitchTokenRef,
 }: { 
   url: string; 
   title?: string;
   isFallback?: boolean;
   fallbackReason?: string | null;
   onRetryM3u8?: () => void;
+  movieSlug?: string;
+  episodeSlug?: string;
+  serverIndex?: number;
+  episodeIndex?: number;
+  source?: string;
+  movie?: any;
+  isHistorySaveReady?: boolean;
+  serverSwitchToken?: number;
+  latestPlaybackRef?: React.RefObject<PlaybackSnapshot | null>;
+  lastHandledSwitchTokenRef?: React.RefObject<number>;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const safeUrl = (url || '').replace(/^http:\/\//i, 'https://');
+  const movieRef = useRef(movie);
+  const lastSavedKeyRef = useRef<string | null>(null);
+  const hasMovie = !!movie;
 
   useEffect(() => {
+    movieRef.current = movie;
+  }, [movie]);
+
+  // Nếu là server Iframe: lưu ngay position = 0 (không cần lưu mốc thời gian để tua)
+  useEffect(() => {
+    if (lastHandledSwitchTokenRef && serverSwitchToken) {
+      lastHandledSwitchTokenRef.current = serverSwitchToken;
+    }
+    if (latestPlaybackRef) {
+      latestPlaybackRef.current = {
+        movieSlug: movieSlug || '',
+        episodeSlug: episodeSlug || '',
+        serverIndex,
+        episodeIndex,
+        time: 0,
+        duration: 0,
+        isIframe: true,
+      };
+    }
+
+    if (!isHistorySaveReady) return;
+    if (!movieSlug || !episodeSlug || !hasMovie || !movieRef.current) return;
+
+    const saveKey = `${movieSlug}:${serverIndex}:${episodeIndex}:${episodeSlug}:${url}`;
+    if (lastSavedKeyRef.current === saveKey) return;
+    lastSavedKeyRef.current = saveKey;
+
+    persistWatchProgress({
+      movie: movieRef.current,
+      movieSlug,
+      episodeSlug,
+      serverIndex,
+      episodeIndex,
+      source,
+      time: 0,
+      duration: 0,
+      force: true,
+      allowZeroPosition: true,
+      resetPosition: true,
+    });
+  }, [
+    movieSlug,
+    episodeSlug,
+    serverIndex,
+    episodeIndex,
+    url,
+    source,
+    hasMovie,
+    isHistorySaveReady,
+    serverSwitchToken,
+    latestPlaybackRef,
+    lastHandledSwitchTokenRef,
+  ]);
+
+  // Dùng useLayoutEffect để cleanup chạy đồng bộ TRƯỚC khi React gỡ node hoặc <Activity> ẩn (display: none)
+  useLayoutEffect(() => {
     const el = iframeRef.current;
+    if (el && safeUrl && el.getAttribute('src') !== safeUrl) {
+      el.src = safeUrl;
+    }
     return () => {
       if (el) {
-        el.src = '';
+        el.src = 'about:blank';
       }
     };
-  }, []);
+  }, [safeUrl]);
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden group">
@@ -1991,7 +2355,7 @@ function IframePlayer({
         className="w-full h-full border-0"
         allowFullScreen
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-        loading="lazy"
+        loading="eager"
         referrerPolicy="no-referrer-when-downgrade"
       />
       {/* Top Bar của Iframe Player: Luôn hiện badge nguồn & nút chuyển về HLS nếu có */}

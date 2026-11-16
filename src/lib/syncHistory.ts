@@ -39,6 +39,7 @@ export interface SyncHistoryParams {
   movieName?: string;
   posterUrl?: string;
   thumbUrl?: string;
+  resetPosition?: boolean;
 }
 
 const DEVICE_ID_KEY = 'movie_web_device_id';
@@ -123,6 +124,10 @@ export async function syncWatchHistory(params: SyncHistoryParams, force = false)
     timestamp: now,
   });
 
+  if (force) {
+    invalidateUserHistoryCache(userId);
+  }
+
   try {
     const res = await fetch('/api/history', {
       method: 'POST',
@@ -141,6 +146,7 @@ export async function syncWatchHistory(params: SyncHistoryParams, force = false)
         movieName: params.movieName,
         posterUrl: params.posterUrl,
         thumbUrl: params.thumbUrl,
+        ...(params.resetPosition ? { resetPosition: true } : {}),
       }),
       // Keep alive so request completes even if user closes the tab
       keepalive: true,

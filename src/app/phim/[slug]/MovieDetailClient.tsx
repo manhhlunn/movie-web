@@ -83,7 +83,7 @@ export default function MovieDetailClient({
             getEpisodeSlugFromDetail(movie, sIdx, epIdx);
           const pos = Number(item.position) || 0;
           const sec = pos >= 1000 ? pos / 1000 : pos;
-          if (targetSlug && sec > 3) {
+          if (targetSlug) {
             setWatchProgress({ episodeSlug: targetSlug, time: sec, serverIndex: sIdx });
           }
         }
@@ -94,23 +94,25 @@ export default function MovieDetailClient({
         if (saved) {
           try {
             const parsed = JSON.parse(saved);
-            let sIdx = typeof parsed.serverIndex === 'number' ? parsed.serverIndex : undefined;
-            if (sIdx === undefined) {
-              const history = getHistory();
-              const found = history.find((m) => m.slug === slug);
-              if (found && typeof found.serverIndex === 'number') {
-                sIdx = found.serverIndex;
+            if (parsed?.episodeSlug) {
+              let sIdx = typeof parsed.serverIndex === 'number' ? parsed.serverIndex : undefined;
+              if (sIdx === undefined) {
+                const history = getHistory();
+                const found = history.find((m) => m.slug === slug);
+                if (found && typeof found.serverIndex === 'number') {
+                  sIdx = found.serverIndex;
+                }
               }
+              setWatchProgress({ ...parsed, serverIndex: sIdx });
             }
-            setWatchProgress({ ...parsed, serverIndex: sIdx });
           } catch {}
         } else {
           const history = getHistory();
           const found = history.find((m) => m.slug === slug);
-          if (found && found.lastEpisodeSlug && found.lastTime && found.lastTime > 3) {
+          if (found && found.lastEpisodeSlug) {
             setWatchProgress({
               episodeSlug: found.lastEpisodeSlug,
-              time: found.lastTime,
+              time: found.lastTime ?? 0,
               serverIndex: found.serverIndex ?? 0,
             });
           }

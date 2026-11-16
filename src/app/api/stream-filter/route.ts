@@ -1,23 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-
-
-function isAdSegment(line: string): boolean {
-  if (!line) return false;
-  const clean = line.trim();
-  if (clean.startsWith('#')) return false;
-  // Bỏ qua các phân đoạn sửa lỗi phim của CDN (convertv8, convert...)
-  if (/convertv\d*/i.test(clean)) return false;
-
-  // 1. Phù hợp định dạng /v8/hash/segment_0001.ts hoặc /v[0-9]+/hash/segment_...
-  if (/\/v\d+\/[a-f0-9]{10,}\/segment_\d+\.ts/i.test(clean)) return true;
-  // 2. Định dạng segment_0001.ts với đường dẫn tuyệt đối hoặc chứa /v
-  if (/\/segment_\d+\.ts/i.test(clean) && (clean.startsWith('/') || clean.includes('/v'))) return true;
-  // 3. Các từ khoá quảng cáo trong đường dẫn
-  if (/(\/|\b)(ads?|advert|qc|quangcao|midroll|preroll)\b/i.test(clean)) return true;
-
-  return false;
-}
+import { isAdSegment } from '@/lib/adDetection';
 
 function processM3u8(content: string, playlistUrl: string, requestOrigin: string): string {
   const lines = content.split(/\r?\n/);
@@ -53,12 +35,14 @@ function processM3u8(content: string, playlistUrl: string, requestOrigin: string
     if (!line) continue;
 
     // Xử lý thẻ DISCONTINUITY
-    if (line.startsWith('#EXT-X-DISCONTINUITY')) {
-      // Kiểm tra xem các dòng tiếp theo có phải là đoạn quảng cáo không
+    if (line === '#EXT-X-DISCONTINUITY') {
+      // Kiểm tra xem segment đầu tiên ngay sau DISCONTINUITY có phải là quảng cáo không
       let nextIsAd = false;
-      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+      for (let j = i + 1; j < lines.length; j++) {
         const next = lines[j].trim();
-        if (next && !next.startsWith('#')) {
+        if (!next) continue;
+        if (next === '#EXT-X-DISCONTINUITY') break;
+        if (!next.startsWith('#')) {
           if (isAdSegment(next)) nextIsAd = true;
           break;
         }
@@ -85,7 +69,7 @@ function processM3u8(content: string, playlistUrl: string, requestOrigin: string
 
     // Xử lý thẻ KEY và MAP (AES-128 key, init map)
     if (line.startsWith('#EXT-X-KEY') || line.startsWith('#EXT-X-MAP')) {
-      if (line.startsWith('#EXT-X-KEY:METHOD=NONE') && skippingAd) {
+      if (skippingAd) {
         continue;
       }
       // Chuyển relative URI trong thẻ (ví dụ URI="enc.key") thành absolute URL trỏ về CDN gốc

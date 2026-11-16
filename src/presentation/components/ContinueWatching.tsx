@@ -138,9 +138,12 @@ export default function ContinueWatching() {
               ? `/xem-phim/${movie.slug}/${movie.lastEpisodeSlug}${watchQuery}` 
               : `/phim/${movie.slug}${detailQuery}`;
 
-            const percent = (movie.lastTime && movie.lastDuration && movie.lastDuration > 0)
-              ? Math.min(100, Math.max(3, Math.round((movie.lastTime / movie.lastDuration) * 100)))
-              : 25;
+            const hasPlayPosition = !!(movie.lastTime && movie.lastTime > 0);
+            const percent = (hasPlayPosition && movie.lastDuration && movie.lastDuration > 0)
+              ? Math.min(100, Math.max(3, Math.round((movie.lastTime! / movie.lastDuration!) * 100)))
+              : hasPlayPosition
+                ? 25
+                : 0;
 
             return (
               <motion.div
@@ -177,8 +180,8 @@ export default function ContinueWatching() {
                       </div>
                     </div>
 
-                    {/* Progress Bar (only if has progress) */}
-                    {hasProgress && (
+                    {/* Progress Bar (only if has progress > 0) */}
+                    {hasProgress && percent > 0 && (
                       <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
                         <div 
                           className="h-full bg-red-600 transition-all duration-300" 
@@ -193,8 +196,10 @@ export default function ContinueWatching() {
                       {movie.name}
                     </h3>
                     <p className="text-zinc-500 text-xs font-medium uppercase tracking-wider">
-                      {hasProgress 
-                        ? `Tiếp tục: Tập ${formatEpisodeDisplay(movie.lastEpisodeSlug)} (${percent}%)` 
+                      {hasProgress
+                        ? percent > 0
+                          ? `Tiếp tục: Tập ${formatEpisodeDisplay(movie.lastEpisodeSlug)} (${percent}%)`
+                          : `Tiếp tục: Tập ${formatEpisodeDisplay(movie.lastEpisodeSlug)}`
                         : 'Xem ngay'}
                     </p>
                   </div>

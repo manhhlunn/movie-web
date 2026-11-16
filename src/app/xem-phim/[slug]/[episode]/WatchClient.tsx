@@ -17,15 +17,21 @@ import EpisodeList from '@/presentation/components/EpisodeList';
 import { Skeleton } from '@/presentation/components/Skeleton';
 import { useEffect, useMemo, useState } from 'react';
 import { isEpisodeMatch } from '@/lib/episodeUtils';
+import { resolveStreamLink } from '@/application/useCases/MovieUseCases';
 
 import { Movie, ServerData } from '@/domain/entities/Movie';
 import { useSearchParams } from 'next/navigation';
-import { getHistory } from '@/lib/userStore';
+import {
+  getHistory,
+  suppressNextHistoryCleanupSave,
+  clearHistoryCleanupSaveSuppression,
+} from '@/lib/userStore';
 import { getUserId, fetchUserHistory } from '@/lib/syncHistory';
 
 function resolveServerName(
   servers: ServerData[] | undefined,
-  serverParam?: string | number | null
+  serverParam?: string | number | null,
+  allowOneBasedFallback = true
 ): string | undefined {
   if (!servers || servers.length === 0 || serverParam === null || serverParam === undefined || serverParam === '') {
     return undefined;
@@ -37,7 +43,7 @@ function resolveServerName(
       return servers[num].serverName;
     }
     // 1-based index fallback if out-of-bounds (e.g. server=2 when length is 2)
-    if (num - 1 >= 0 && num - 1 < servers.length) {
+    if (allowOneBasedFallback && num - 1 >= 0 && num - 1 < servers.length) {
       return servers[num - 1].serverName;
     }
   }
@@ -66,7 +72,7 @@ export default function WatchClient({
   const { data: movie, isLoading: isMovieLoading } = useMovieDetails(slug, sourceParam, {
     initialData: initialMovie,
   });
-  const { data: extraSources } = useMovieExtraSources(movie, sourceParam);
+  const { data: extraSources, isLoading: isExtraLoading } = useMovieExtraSources(movie, sourceParam);
 
   const combinedMovie = useMemo(() => {
     if (!movie) return undefined;
@@ -86,10 +92,34 @@ export default function WatchClient({
 
   const [currentEpisodeSlug, setCurrentEpisodeSlug] = useState(episode);
   const [prevEpisodeProp, setPrevEpisodeProp] = useState(episode);
+  const [serverSwitchToken, setServerSwitchToken] = useState(0);
+  const [historyRestoreState, setHistoryRestoreState] = useState<{
+    done: boolean;
+    savedServerIdx: number | null;
+  }>({ done: false, savedServerIdx: null });
+
+  const parsedUrlServerIdx = useMemo(() => {
+    if (!serverParam) return null;
+    const trimmed = String(serverParam).trim();
+    return /^\d+$/.test(trimmed) ? parseInt(trimmed, 10) : null;
+  }, [serverParam]);
+
+  const isWaitingExtraForServerParam = useMemo(() => {
+    if (!serverParam) return false;
+    if (sourceParam !== 'phimapi' || !isExtraLoading) return false;
+    const baseServers = movie?.servers || [];
+    if (parsedUrlServerIdx !== null) {
+      return parsedUrlServerIdx >= baseServers.length;
+    }
+    const trimmed = String(serverParam).trim().toLowerCase();
+    return !baseServers.some(
+      (s) => s.serverName.toLowerCase() === trimmed || s.serverName.toLowerCase().includes(trimmed)
+    );
+  }, [serverParam, sourceParam, isExtraLoading, movie?.servers, parsedUrlServerIdx]);
 
   const resolvedServerNameFromUrl = useMemo(() => {
-    return resolveServerName(combinedMovie?.servers, serverParam);
-  }, [combinedMovie?.servers, serverParam]);
+    return resolveServerName(combinedMovie?.servers, serverParam, !isWaitingExtraForServerParam);
+  }, [combinedMovie?.servers, serverParam, isWaitingExtraForServerParam]);
 
   const [selectedServerName, setSelectedServerName] = useState<string | undefined>(undefined);
 
@@ -121,7 +151,7 @@ export default function WatchClient({
   useEffect(() => {
     if (serverParam !== null && serverParam !== undefined) return;
     if (selectedServerName) return;
-    if (!combinedMovie?.servers || combinedMovie.servers.length <= 1) return;
+    if (!combinedMovie?.servers || combinedMovie.servers.length === 0) return;
 
     let isCancelled = false;
 
@@ -157,22 +187,43 @@ export default function WatchClient({
           const item: any = await fetchUserHistory(userId, slug);
           if (item && !isCancelled) {
             const sIdx = item.serverIndex ?? item.server_index;
-            if (typeof sIdx === 'number' && sIdx >= 0 && sIdx < combinedMovie.servers.length) {
-              setSelectedServerName(combinedMovie.servers[sIdx].serverName);
-              return;
+            if (typeof sIdx === 'number' && sIdx >= 0) {
+              savedServerIdx = sIdx;
             }
           }
         } catch {}
       }
 
-      if (!isCancelled && savedServerIdx !== undefined && savedServerIdx < combinedMovie.servers.length) {
-        setSelectedServerName(combinedMovie.servers[savedServerIdx].serverName);
+      if (isCancelled) return;
+
+      const normalizedSavedIdx =
+        typeof savedServerIdx === 'number' && savedServerIdx >= 0 ? savedServerIdx : null;
+
+      await Promise.resolve();
+      if (isCancelled) return;
+
+      if (
+        !selectedServerName &&
+        normalizedSavedIdx !== null &&
+        normalizedSavedIdx < combinedMovie.servers.length
+      ) {
+        setSelectedServerName(combinedMovie.servers[normalizedSavedIdx].serverName);
       }
+      setHistoryRestoreState({ done: true, savedServerIdx: normalizedSavedIdx });
     };
 
-    restoreServerFromHistory();
+    const fallbackTimer = setTimeout(() => {
+      if (!isCancelled) {
+        setHistoryRestoreState((prev) => (prev.done ? prev : { done: true, savedServerIdx: null }));
+      }
+    }, 3500);
+
+    restoreServerFromHistory().finally(() => {
+      clearTimeout(fallbackTimer);
+    });
     return () => {
       isCancelled = true;
+      clearTimeout(fallbackTimer);
     };
   }, [slug, combinedMovie, selectedServerName, serverParam]);
 
@@ -202,18 +253,67 @@ export default function WatchClient({
   const effectiveServerName = selectedServerName || resolvedServerNameFromUrl;
   const streamInfo = useStreamLink(combinedMovie, currentEpisodeSlug, effectiveServerName);
 
+  // Active server and episode indexes
+  const activeServerName = effectiveServerName || streamInfo?.serverName || combinedMovie?.servers?.[0]?.serverName;
+  const serverIndex = combinedMovie?.servers
+    ? Math.max(0, combinedMovie.servers.findIndex((s) => s.serverName === activeServerName))
+    : 0;
+
+  useEffect(() => {
+    clearHistoryCleanupSaveSuppression(slug);
+  }, [slug, currentEpisodeSlug, serverIndex, serverSwitchToken]);
+
+  const isWaitingForRestoredExtraServer =
+    !serverParam &&
+    historyRestoreState.done &&
+    historyRestoreState.savedServerIdx !== null &&
+    sourceParam === 'phimapi' &&
+    isExtraLoading &&
+    historyRestoreState.savedServerIdx >= (combinedMovie?.servers?.length ?? 0);
+
+  const isResolvingTargetServer =
+    serverSwitchToken === 0 &&
+    Boolean(combinedMovie?.servers?.length) &&
+    (serverParam
+      ? isWaitingExtraForServerParam
+      : (!historyRestoreState.done && !selectedServerName) || isWaitingForRestoredExtraServer);
+
+  const isHistorySaveReady =
+    serverSwitchToken > 0 ||
+    (serverParam
+      ? !isWaitingExtraForServerParam
+      : historyRestoreState.done && !isWaitingForRestoredExtraServer);
+
   const handleEpisodeChange = (newEpisodeSlug: string, serverName?: string) => {
-    setCurrentEpisodeSlug(newEpisodeSlug);
     const targetServerName = serverName || activeServerName;
-    if (targetServerName) {
-      setSelectedServerName(targetServerName);
-    }
-    
-    // Tìm server index để gắn vào URL
     const targetServerIdx = targetServerName && combinedMovie?.servers
       ? combinedMovie.servers.findIndex((s) => s.serverName === targetServerName)
       : -1;
     const effectiveIdx = targetServerIdx >= 0 ? targetServerIdx : serverIndex;
+
+    const isSameEpisode = newEpisodeSlug === currentEpisodeSlug;
+    const isSameServer = effectiveIdx === serverIndex;
+    if (isSameEpisode && isSameServer) return;
+
+    const targetStream = combinedMovie
+      ? resolveStreamLink(combinedMovie, newEpisodeSlug, targetServerName)
+      : null;
+    const targetIsM3u8 = !!(
+      targetStream?.linkM3u8 && targetStream.linkM3u8.toLowerCase().includes('.m3u8')
+    );
+    const targetIsIframe = !targetIsM3u8 && !!targetStream?.linkEmbed;
+
+    if (!isSameServer || targetIsIframe) {
+      suppressNextHistoryCleanupSave(slug);
+    }
+    if (!isSameServer) {
+      setServerSwitchToken((prev) => prev + 1);
+    }
+
+    setCurrentEpisodeSlug(newEpisodeSlug);
+    if (targetServerName) {
+      setSelectedServerName(targetServerName);
+    }
 
     const params = new URLSearchParams();
     if (sourceParam) params.set('source', sourceParam);
@@ -224,12 +324,6 @@ export default function WatchClient({
     const newPath = `/xem-phim/${slug}/${newEpisodeSlug}${queryStr}`;
     window.history.pushState(null, '', newPath);
   };
-
-  // Active server and episode indexes
-  const activeServerName = effectiveServerName || streamInfo?.serverName || combinedMovie?.servers?.[0]?.serverName;
-  const serverIndex = combinedMovie?.servers
-    ? Math.max(0, combinedMovie.servers.findIndex((s) => s.serverName === activeServerName))
-    : 0;
 
   const currentServer = combinedMovie?.servers?.[serverIndex];
   const episodeIndex = currentServer?.episodes
@@ -300,7 +394,12 @@ export default function WatchClient({
 
       {/* Main Video Player */}
       <div className="mb-8">
-        {!streamInfo ? (
+        {isResolvingTargetServer ? (
+          <div className="relative w-full aspect-video bg-zinc-900 rounded-xl flex flex-col items-center justify-center gap-3">
+            <div className="w-10 h-10 rounded-full border-2 border-red-500/20 border-t-red-500 animate-spin" />
+            <p className="text-zinc-400 text-xs sm:text-sm">Đang tải nguồn phát...</p>
+          </div>
+        ) : !streamInfo ? (
           <div className="relative w-full aspect-video bg-zinc-900 rounded-xl flex items-center justify-center">
             <p className="text-zinc-500 text-sm">Không có nguồn phát cho tập này</p>
           </div>
@@ -324,6 +423,8 @@ export default function WatchClient({
                 movie={combinedMovie}
                 nextEpisodeUrl={nextEpisodeSlug ? `/xem-phim/${slug}/${nextEpisodeSlug}${nextQueryStr}` : undefined}
                 onNextEpisode={nextEpisodeSlug ? () => handleEpisodeChange(nextEpisodeSlug!, activeServerName) : undefined}
+                isHistorySaveReady={isHistorySaveReady}
+                serverSwitchToken={serverSwitchToken}
               />
             );
           })()

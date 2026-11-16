@@ -10,6 +10,25 @@ const FAVORITES_KEY = "user_favorites";
 const HISTORY_KEY = "user_history";
 const MAX_HISTORY = 50;
 
+const cleanupSuppressionMap = new Map<string, number>();
+
+export function suppressNextHistoryCleanupSave(slug: string) {
+  if (!slug) return;
+  cleanupSuppressionMap.set(slug, Date.now());
+}
+
+export function isHistoryCleanupSaveSuppressed(slug?: string): boolean {
+  if (!slug) return false;
+  const ts = cleanupSuppressionMap.get(slug);
+  if (!ts) return false;
+  return Date.now() - ts < 5000;
+}
+
+export function clearHistoryCleanupSaveSuppression(slug?: string) {
+  if (!slug) return;
+  cleanupSuppressionMap.delete(slug);
+}
+
 export const getFavorites = (): Movie[] => {
   if (typeof window === "undefined") return [];
   try {
@@ -87,7 +106,11 @@ export const addToHistory = (
   lastDuration?: number,
   serverIndex?: number,
   episodeIndex?: number,
-  force = false
+  force = false,
+  options?: {
+    allowZeroPosition?: boolean;
+    resetPosition?: boolean;
+  }
 ) => {
   const userId = getUserId();
   const movieName = movie.name || movie.movieName || '';
@@ -98,8 +121,9 @@ export const addToHistory = (
 
   // ─── NẾU CÓ NHẬP ID: CHỈ LƯU VÀO SUPABASE, KHÔNG LƯU Ở LOCAL CỦA MÁY NỮA ───
   if (userId) {
-    // KHÔNG BAO GIỜ ghi đè tiến độ về 0 khi mở trang hoặc chưa có thời gian xem thực tế
-    if (lastTime === undefined || lastTime <= 0) {
+    const allowZero = options?.allowZeroPosition === true;
+    // KHÔNG BAO GIỜ ghi đè tiến độ về 0 khi mở trang hoặc chưa có thời gian xem thực tế (trừ khi chủ động lưu 0 như Iframe / đổi server)
+    if (lastTime === undefined || (!allowZero && lastTime <= 0) || (allowZero && lastTime < 0)) {
       return;
     }
 
@@ -115,6 +139,7 @@ export const addToHistory = (
         movieName,
         posterUrl,
         thumbUrl,
+        resetPosition: options?.resetPosition,
       },
       force
     ).then((synced) => {
@@ -143,8 +168,16 @@ export const addToHistory = (
       serverIndex: serverIndex ?? existing.serverIndex ?? 0,
       episodeIndex: episodeIndex ?? existing.episodeIndex ?? 0,
       lastEpisodeSlug: lastEpisodeSlug || existing.lastEpisodeSlug,
-      lastTime: lastTime !== undefined ? lastTime : existing.lastTime,
-      lastDuration: lastDuration !== undefined ? lastDuration : existing.lastDuration,
+      lastTime: options?.resetPosition
+        ? 0
+        : lastTime !== undefined
+          ? lastTime
+          : existing.lastTime,
+      lastDuration: options?.resetPosition
+        ? 0
+        : lastDuration !== undefined
+          ? lastDuration
+          : existing.lastDuration,
     };
     history.splice(index, 1);
   } else {

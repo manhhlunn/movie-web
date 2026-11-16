@@ -43,9 +43,16 @@ export default function Navbar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [prevPathname, setPrevPathname] = useState(pathname);
   const dropdownTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname);
+    setDropdownOpen(false);
+    setMobileMenuOpen(false);
+  }
 
   const handleMouseEnterDropdown = () => {
     if (dropdownTimeoutRef.current) {
@@ -63,11 +70,6 @@ export default function Navbar() {
       setDropdownOpen(false);
     }, 200);
   };
-
-  useEffect(() => {
-    setDropdownOpen(false);
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);

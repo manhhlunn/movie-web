@@ -160,8 +160,8 @@ export async function POST(request: NextRequest) {
     let finalDuration = Math.max(0, effectiveDuration);
 
     // BẢO VỆ TIẾN ĐỘ: Nếu client gửi vị trí <= 0, kiểm tra bản ghi hiện tại trong Supabase.
-    // Chỉ giữ nguyên tiến độ cũ NẾU cùng serverIndex và episodeIndex. Tránh ghi đè tiến độ tập cũ sang tập mới!
-    if (finalPosition <= 0) {
+    // Chỉ giữ nguyên tiến độ cũ NẾU cùng serverIndex và episodeIndex (trừ khi client chủ động resetPosition, ví dụ đổi sang Iframe).
+    if (finalPosition <= 0 && !body.resetPosition) {
       const { data: existing } = await supabase
         .from('watch_history')
         .select('position, duration, episode_index, server_index')
